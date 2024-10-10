@@ -30,14 +30,6 @@ Global Variables:
 
 """
 
-# #TODO
-# ## Create a pipeline with preprocessing and logistic regression
-# pipeline = Pipeline(steps=[
-#     ('preprocessor', preprocessor),
-#     ('classifier', LogisticRegression(max_iter=1000))
-# ])
-# Import File/Dataset
-
 file_path = input("Please enter the file path: ")
 df_og = pd.read_csv(file_path, delimiter=',', encoding='latin1')
 df = df_og.copy()
@@ -100,8 +92,6 @@ Cat_Encoder()
 target =  input('Target name: ') #'BIneg_new'
 X = df_encoded.drop(columns=[target])
 y = df_encoded[target]
-
-
 
 
 # Train Test Val Split Function
@@ -168,7 +158,6 @@ def Feature_Selection():
     X_val_ft = pd.DataFrame(model_log_features.transform(X_val), columns=selected_features)
 
     return X_train, X_val, X_val_ft, log_reg_e, X_train_ft, selected_features
-    #FIXME: return variables
 
 
 
@@ -201,6 +190,9 @@ def Parameter_Tuning():
     # Refit the logistic regression model on X_train_ft
     log_reg_e_ft = LogisticRegression(class_weight=class_weight_dict, **best_params).fit(X_train_ft, y_train)
     print('Class weight', class_weight_dict)
+
+    #TODO: intentional resampling of pts w/ neg body img. SMOTE. To include in elastic net. aka internal trick to learn more from underrepped group.
+    #Separate workbook/pipeline test. 
 
     # Predictions
     y_pred_ft = log_reg_e_ft.predict(X_val_ft)
@@ -245,14 +237,14 @@ def Feature_Importance():
     
     # Plot OR & CI
     plt.figure(figsize=(12, 12))
-    plt.errorbar(feature_importance_df['Feature'], feature_importance_df['Odds Ratio'],
-                yerr=[feature_importance_df['Odds Ratio'] - feature_importance_df['CI Lower'],
+    plt.errorbar(feature_importance_df['Odds Ratio'], feature_importance_df['Feature'],
+                xerr=[feature_importance_df['Odds Ratio'] - feature_importance_df['CI Lower'],
                     feature_importance_df['CI Upper'] - feature_importance_df['Odds Ratio']],
                 fmt='o', ecolor='r', capsize=5, capthick=2)
-    plt.axhline(y=1, color='gray', linestyle='--')
-    plt.xticks(rotation=90)
-    plt.xlabel('Features')
-    plt.ylabel('Odds Ratio')
+    plt.axvline(x=1, color='gray', linestyle='--')
+    plt.yticks(rotation=0)
+    plt.ylabel('Features')
+    plt.xlabel('Odds Ratio')
     plt.title('Odds Ratios with 95% Confidence Intervals')
     plt.tight_layout()
     plt.show()
@@ -278,7 +270,7 @@ def Evaluations():
     plt.show()
 
     # Correlation matrix
-    correlation_matrix = X_train_ft.corr()
+    correlation_matrix = X_train_ft.corr() # TODO: what's the number output in the matrix? eg. pearson's r
     plt.figure(figsize=(12, 12))
     sns.set(font_scale=1)
     sns.heatmap(correlation_matrix, annot=True, cmap="YlGn", linewidths=.5)
@@ -333,3 +325,7 @@ def Preprocessing(explore, rename, split, log_eval):
 
 if __name__ == "__main__":
     Preprocessing(False, False, True, True)
+
+
+# # TODO: Function to save outputs
+# def save_outputs():
