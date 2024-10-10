@@ -100,7 +100,6 @@ def log_reg(): #grid search, elastic net
     y_proba_ft = log_reg_e_ft.predict_proba(X_val_ft)  # pred probability
 
     feature_importance = pd.Series(log_reg_e_ft.coef_.flatten(), index=selected_features)
-    feature_importance.sort_values(ascending=False, inplace=True)
    
     # The coefficients
     coef = log_reg_e_ft.coef_
@@ -143,14 +142,6 @@ def evaluations(log_reg):
     plt.title("Correlation Matrix Heatmap of All Variables")
     plt.legend(loc='best')
     plt.show()
-
-    # Metrics
-    print('\n Accuracy Score:', accuracy_score(y_val, y_pred_ft))
-    print('\n Precision Score:', precision_score(y_val, y_pred_ft))
-    print('\n Recall Score:', recall_score(y_val, y_pred_ft))
-    print('\n F1 Score:', f1_score(y_val, y_pred_ft))
-    print('\n Log Loss:', log_loss(y_val, y_proba_ft))
-    print('\n')
 
     # ROC Curve and AUC
     fpr, tpr, _ = roc_curve(y_val, y_proba_ft[:, 1])
