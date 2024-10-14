@@ -17,7 +17,7 @@ from imblearn.over_sampling import SMOTE
 import os
 from fpdf import FPDF
 from io import BytesIO
-# import cairosvg
+import tempfile
 
 """
 Global Variables: #FIXME: Ensure they're indeed global and that all are present
@@ -255,12 +255,14 @@ def Feature_Importance():
 
     """
 
-    global log_reg_e_ft, selected_features, X_train_ft, coef, odds_ratios, ci_lower_or, ci_upper_or, feature_importance
+    global log_reg_e_ft, selected_features, X_train_ft, coef, odds_ratios, ci_lower_or, ci_upper_or, feature_importance, or_ci_plot
 
     feature_importance = pd.Series(log_reg_e_ft.coef_.flatten(), index=selected_features)
+    feature_importance = feature_importance.round(3)
 
     coef = log_reg_e_ft.coef_.flatten()
     coef = np.sort(coef, axis=None)[::-1] # to sort df by coef
+    coef = np.round(coef, 3)
 
     # Calculate standard errors
     se = np.sqrt(np.diag(np.linalg.inv(np.dot(X_train_ft.T, X_train_ft))))
@@ -274,6 +276,7 @@ def Feature_Importance():
     ci_lower_or = np.exp(ci_lower)
     ci_upper_or = np.exp(ci_upper)
     odds_ratios = np.exp(coef)
+    odds_ratios = np.round(odds_ratios, 3)
 
     # Create a DataFrame of features, coefficients, and odds ratios
     feature_importance_df = pd.DataFrame({
@@ -300,18 +303,17 @@ def Feature_Importance():
     plt.tight_layout()
 
     # Save the figure to a file in target folder
-    plt.savefig(f'{target_folder}/odds_ratios_ci_plot.svg', format='svg')
+    plt.savefig(os.path.join(target_folder, f'{file_name}_odds_ratios_ci_plot.svg'), format='svg')
 
     # Save the figure to a BytesIO object
-    # or_ci_plot = BytesIO()
-    # plt.savefig(or_ci_plot, format='svg')
-    # or_ci_plot.seek(0)  # Rewind the BytesIO object to the beginning
+    or_ci_plot = BytesIO()
+    plt.savefig(or_ci_plot, format='jpg')
+    or_ci_plot.seek(0)  # Rewind the BytesIO object to the beginning
     plt.close()
 
     plt.show()
 
-    return coef, ci_lower_or, ci_upper_or, odds_ratios, feature_importance \
-    # or_ci_plot
+    return coef, ci_lower_or, ci_upper_or, odds_ratios, feature_importance, feature_importance_df, or_ci_plot
 
 # Feature_Importance()
 
@@ -342,13 +344,13 @@ def Evaluations(y_val, y_pred_ft, y_proba_ft, X_train_ft):
 
     """
 
-    global metrics_ft, conf_matrix, correlation_matrix, auc, fpr, tpr
+    global metrics_ft, conf_matrix, correlation_matrix, auc, fpr, tpr, confusion_matrix_plot, correlation_matrix_plot, roc_curve_plot
     # confusion_matrix_plot, correlation_matrix_plot, roc_curve_plot
 
     # Confusion Matrix: compare actual vs predicted values.
     conf_matrix = confusion_matrix(y_val, y_pred_ft)
     plt.figure(figsize=(12, 12)) 
-    sns.set(font_scale=0.7)
+    sns.set(font_scale=1)
     sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues', cbar=False,
                 xticklabels=['Predicted Negative', 'Predicted Positive'],
                 yticklabels=['Actual Negative', 'Actual Positive'])
@@ -356,10 +358,10 @@ def Evaluations(y_val, y_pred_ft, y_proba_ft, X_train_ft):
     plt.ylabel('Actual')
     plt.title('Confusion Matrix')
     
-    plt.savefig(f'{target_folder}/confusion_matrix_plot.svg', format='svg') # Save the figure to a file
-    # confusion_matrix_plot = BytesIO() # Save the figure to a BytesIO object
-    # plt.savefig(confusion_matrix_plot, format='svg')
-    # confusion_matrix_plot.seek(0)  # Rewind the BytesIO object to the beginning
+    plt.savefig(os.path.join(target_folder, f'{file_name}_confusion_matrix_plot.svg'), format='svg') # Save the figure to a file
+    confusion_matrix_plot = BytesIO() # Save the figure to a BytesIO object
+    plt.savefig(confusion_matrix_plot, format='jpg')
+    confusion_matrix_plot.seek(0)  # Rewind the BytesIO object to the beginning
     plt.show()
     plt.close()
 
@@ -372,10 +374,11 @@ def Evaluations(y_val, y_pred_ft, y_proba_ft, X_train_ft):
     plt.legend(loc='best')
 
 
-    plt.savefig(f'{target_folder}/confusion_matrix_plot.svg', format='svg') # Save the figure to a file
-    # correlation_matrix_plot = BytesIO() # Save the figure to a BytesIO object
-    # plt.savefig(correlation_matrix_plot, format='svg') #FIXME: save with file name
-    # correlation_matrix_plot.seek(0)  # Rewind the BytesIO object to the beginning
+    plt.savefig(os.path.join(target_folder, f'{file_name}_correlation_matrix_plot.svg'), format='svg') # Save the figure to a file
+
+    correlation_matrix_plot = BytesIO() # Save the figure to a BytesIO object
+    plt.savefig(correlation_matrix_plot, format='jpg') #FIXME: save with file name
+    correlation_matrix_plot.seek(0)  # Rewind the BytesIO object to the beginning
     plt.show()
     plt.close()
 
@@ -387,13 +390,14 @@ def Evaluations(y_val, y_pred_ft, y_proba_ft, X_train_ft):
     plt.plot([0, 1], [0, 1], 'k--')
     plt.xlabel('False Positive Rate')
     plt.ylabel('True Positive Rate')
-    plt.title('ROC Curve')
+    plt.title(f'ROC Curve {file_name}')
     plt.legend(loc='best')
 
-    plt.savefig(f'{target_folder}/ROC_Curve_plot.svg', format='svg') # Save the figure to a file
-    # roc_curve_plot = BytesIO() # Save the figure to a BytesIO object
-    # plt.savefig(roc_curve_plot, format='svg')
-    # roc_curve_plot.seek(0) # Rewind the BytesIO object to the beginning
+    plt.savefig(os.path.join(target_folder, f'{file_name}_ROC_Curve_plot.svg'), format='svg') # Save the figure to a file
+
+    roc_curve_plot = BytesIO() # Save the figure to a BytesIO object
+    plt.savefig(roc_curve_plot, format='jpg')
+    roc_curve_plot.seek(0) # Rewind the BytesIO object to the beginning
     plt.show()
     plt.close()
 
@@ -420,7 +424,6 @@ def Evaluations(y_val, y_pred_ft, y_proba_ft, X_train_ft):
 # Function to save outputs
 #FIXME: Add images to the PDF
 def save_outputs():
-    #confusion_matrix_plot, correlation_matrix_plot, roc_curve_plot
     '''
     
     Function to save the output of models to a PDF file.
@@ -432,7 +435,7 @@ def save_outputs():
     4. Save the PDF to a specific folder.
 
     '''
-    global date_time, file_name, file_path, target, metrics_ft, auc, coef, odds_ratios, ci_lower_or, ci_upper_or, feature_importance, selected_features, conf_matrix, correlation_matrix, fpr, tpr, y_val, y_pred_ft, y_proba_ft
+    global date_time, file_name, file_path, target, metrics_ft, auc, coef, odds_ratios, ci_lower_or, ci_upper_or, feature_importance, selected_features, conf_matrix, correlation_matrix, fpr, tpr, y_val, y_pred_ft, y_proba_ft,confusion_matrix_plot, correlation_matrix_plot, roc_curve_plot, or_ci_plot
 
     # Define the target folder #FIXME: see if  global. If so then would need to eg. print a list of all the items in the folder to see whats there, but if in this function we can immediately see.. 
     # So do we save within original function (whcih makes sense) 
@@ -496,13 +499,37 @@ def save_outputs():
         pdf.cell(col_width, 10, txt=str(data_text['Feature Importance'][i]), border=1)  # Feature Importance
         pdf.ln()
 
-    # png_image_paths = [confusion_matrix_plot, correlation_matrix_plot, roc_curve_plot]
-    # Save the images to the output PDF
-    # image_paths = png_image_paths
+    # Save BytesIO objects to temporary files
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_or_ci_plot:
+        tmp_or_ci_plot.write(or_ci_plot.getbuffer())
+        or_ci_plot_path = tmp_or_ci_plot.name
 
-    # for x in png_image_paths:
-    #     pdf.add_page()
-    #     pdf.image(x, x=10, y=50, w=190)
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_correlation_matrix_plot:
+        tmp_correlation_matrix_plot.write(correlation_matrix_plot.getbuffer())
+        correlation_matrix_plot_path = tmp_correlation_matrix_plot.name
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_confusion_matrix_plot:
+        tmp_confusion_matrix_plot.write(confusion_matrix_plot.getbuffer())
+        confusion_matrix_plot_path = tmp_confusion_matrix_plot.name
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_roc_curve_plot:
+        tmp_roc_curve_plot.write(roc_curve_plot.getbuffer())
+        roc_curve_plot_path = tmp_roc_curve_plot.name
+
+    # Add a new page for the or_ci_plot
+    pdf.add_page()
+    pdf.image(or_ci_plot_path, x=10, y=50, w=190)
+    # Add a new page for the correlation matrix plot
+    pdf.add_page()
+    pdf.image(correlation_matrix_plot_path, x=10, y=50, w=190)
+    # Add a new page for the confusion matrix plot
+    pdf.add_page()
+    pdf.image(confusion_matrix_plot_path, x=10, y=50, w=190)
+    # Add a new page for the ROC curve plot
+    pdf.add_page()
+    pdf.image(roc_curve_plot_path, x=10, y=50, w=190)
+
+
     pdf_file_name = os.path.join(target_folder, f"{file_name}_output.pdf")
     pdf.output(pdf_file_name)
     # print(f"PDF saved to: {pdf_file_name}")
