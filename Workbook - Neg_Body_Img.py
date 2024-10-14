@@ -34,16 +34,19 @@ Global Variables: #FIXME: Ensure they're indeed global and that all are present
 
 """
 
-file_path = input("Please enter the file path: ") #FIXME: Do we want to make the file path with .. to make going back and forth easier
+base_path = "../"
+target_folder_name = input('PDF (Destination) folder name: ')
+target_folder = os.path.join(base_path, target_folder_name, 'Outputs')
+os.makedirs(target_folder, exist_ok=True) # Ensure the target folder exists
+
+file_path_name = input("Please enter the MODEL_NAME: ")
+file_path = os.path.join(base_path, target_folder_name, f"{file_path_name}.csv")
 df_og = pd.read_csv(file_path, delimiter=',', encoding='latin1')
 df = df_og.copy()
 
 path_parts = file_path.split(os.sep) # Split the file path by the directory separator
 file_name = path_parts[-1] # Extract the second to last part of the split path
-base_path = "../"
-target_folder_name = input('PDF folder name: ')
-target_folder = os.path.join(base_path, target_folder_name, 'Outputs')
-os.makedirs(target_folder, exist_ok=True) # Ensure the target folder exists
+
 #TODO: Need an identifier number 
 
 # Data Exploration Function
@@ -366,7 +369,7 @@ def Evaluations(y_val, y_pred_ft, y_proba_ft, X_train_ft):
     plt.close()
 
     # Correlation matrix: Correlation coefficient between each pair of variables. Pearson's r: -1 to 1. 0 = no correlation. Linear relationship.
-    correlation_matrix = X_train_ft.corr() #TODO: Reformat this to be more readable
+    correlation_matrix = X_train_ft.corr() #FIXME: Gets cut off
     plt.figure(figsize=(12, 12))
     sns.set(font_scale=1)
     sns.heatmap(correlation_matrix, annot=True, cmap="YlGn", linewidths=.5)
@@ -421,8 +424,7 @@ def Evaluations(y_val, y_pred_ft, y_proba_ft, X_train_ft):
 
 # Evaluations(y_val, y_pred_ft, y_proba_ft, X_train_ft)
 
-# Function to save outputs
-#FIXME: Add images to the PDF
+
 def save_outputs():
     '''
     
@@ -475,7 +477,8 @@ def save_outputs():
     # Calculate column width --> fit on page properly
     page_width = pdf.w - 2 * pdf.l_margin
     num_columns = 4  # Number of columns in the table
-    col_width = page_width / num_columns
+    feature_col_width = page_width * 0.3  # Make the "Feature" column 40% of the page width
+    other_col_width = (page_width - feature_col_width) / (num_columns - 1)  # Distribute remaining width among other columns
 
     # Add table header with custom appearance
     pdf.set_font("Courier", 'B', 12)
@@ -483,20 +486,20 @@ def save_outputs():
     pdf.cell(page_width, 10, txt="Feature Analysis", ln=True, align='C', fill=True) # table title
 
     pdf.set_font("Courier", 'B', 10)
-    pdf.cell(col_width, 10, txt="Feature", border=1, fill=True, align='C')
-    pdf.cell(col_width, 10, txt="Coefficient", border=1, fill=True, align='C')
-    pdf.cell(col_width, 10, txt="Odds Ratio", border=1, fill=True, align='C')
-    pdf.cell(col_width, 10, txt="Importance", border=1, fill=True,  align='C')
+    pdf.cell(feature_col_width, 10, txt="Feature", border=1, fill=True, align='C')
+    pdf.cell(other_col_width, 10, txt="Coefficient", border=1, fill=True, align='C')
+    pdf.cell(other_col_width, 10, txt="Odds Ratio", border=1, fill=True, align='C')
+    pdf.cell(other_col_width, 10, txt="Importance", border=1, fill=True,  align='C')
     pdf.ln()
 
     # Add table data with custom appearance
     pdf.set_font("Courier", '', 10)
     for i, feature in enumerate(data_text['Selected Features']):  # Iterate over selected features
-        pdf.cell(col_width, 10, txt=str(feature), border=1)  # Feature
-        pdf.cell(col_width, 10, txt=str(data_text['Coefficients'][i]), border=1)  # Coefficient
+        pdf.cell(feature_col_width, 10, txt=str(feature), border=1)  # Feature
+        pdf.cell(other_col_width, 10, txt=str(data_text['Coefficients'][i]), border=1)  # Coefficient
         ci = f"({data_text['Confidence Intervals'][0][i]}, {data_text['Confidence Intervals'][1][i]})"
-        pdf.cell(col_width, 10, txt=str(data_text['Odds Ratios'][i]), border=1)  # Odds Ratio
-        pdf.cell(col_width, 10, txt=str(data_text['Feature Importance'][i]), border=1)  # Feature Importance
+        pdf.cell(other_col_width, 10, txt=str(data_text['Odds Ratios'][i]), border=1)  # Odds Ratio
+        pdf.cell(other_col_width, 10, txt=str(data_text['Feature Importance'][i]), border=1)  # Feature Importance
         pdf.ln()
 
     # Save BytesIO objects to temporary files
