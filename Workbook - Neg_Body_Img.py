@@ -19,44 +19,28 @@ from fpdf import FPDF
 from io import BytesIO
 import tempfile
 
-"""
-Global Variables: #FIXME: Ensure they're indeed global and that all are present
-    - X_train (pd.DataFrame): The training feature set.
-    - y_train (pd.Series): The training target variable.
-    - X_val (pd.DataFrame): The validation feature set.
-    - y_val (pd.Series): The validation target variable.
-    - y_pred_ft (np.ndarray): The predicted labels for the validation set.
-    - log_reg_e (LogisticRegression): The initial logistic regression model.
-    - X_train_ft (pd.DataFrame): The transformed training feature set with selected features.
-    - X_val_ft (pd.DataFrame): The transformed validation feature set with selected features.
-    - y_proba_ft (np.ndarray): The predicted probabilities for the validation set.
-    - log_reg_e_ft (LogisticRegression): The refitted logistic regression model with the best hyperparameters.
-
-"""
 
 base_path = "../"
 target_folder_name = input('PDF (Destination) folder name: ')
 target_folder = os.path.join(base_path, target_folder_name, 'Outputs')
-os.makedirs(target_folder, exist_ok=True) # Ensure the target folder exists
-
-file_path_name = input("Please enter the MODEL_NAME: ")
-file_path = os.path.join(base_path, target_folder_name, f"{file_path_name}.csv")
-df_og = pd.read_csv(file_path, delimiter=',', encoding='latin1')
+os.makedirs(target_folder, exist_ok=True) 
+model_name = input("Please enter the MODEL_NAME: ")
+model_file_path = os.path.join(base_path, target_folder_name, f"{model_name}.csv")
+df_og = pd.read_csv(model_file_path, delimiter=',', encoding='latin1')
 df = df_og.copy()
 
-path_parts = file_path.split(os.sep) # Split the file path by the directory separator
+path_parts = model_file_path.split(os.sep) # Split the file path by the directory separator
 file_name = path_parts[-1] # Extract the second to last part of the split path
 
-#TODO: Need an identifier number 
+# Get current date and time
+now = datetime.now()
+date_time = now.strftime("%d-%m %H:%M")
 
-# Data Exploration Function
 def Data_Exploration(df):
     print("\n Visualize original data before processing \n")
     print(df.head())
     print(df.info())
     print(df.describe())
-
-# Data_Exploration(df)
 
 # def Rename_Col(df):
 #     df.rename(columns = {column_name:new_column_name}, inplace = True)
@@ -68,8 +52,10 @@ def Cat_Encoder():
 
     Function to transform categorical columns using a OneHotEncoder.
 
-    1. Uses a dictionary to indicate categorical columns and their reference values to drop using a OneHotEncoder.
+    1. Uses a dictionary (refs) to indicate categorical columns and their reference values to drop using a OneHotEncoder.
     2. Transforms and refits the model with the encoded data.
+
+
     Global Variables:
     - refs (dict): A dictionary containing categorical columns and their reference values to drop.
     - df_encoded (pd.DataFrame): The (new) DataFrame containing the encoded data.
@@ -81,7 +67,7 @@ def Cat_Encoder():
     global refs, df_encoded
 
     refs = {
-        "edu": 3.0, # FIXME: Check if this is the correct reference value
+        "edu": 3.0, #FIXME: Given data, no 2.0.
         "tumsoort_hoofd_new2": 1.0,
         "stadium_opgeschoond": 1.0,
         "tijddiagngroep": 3.0,
@@ -89,40 +75,44 @@ def Cat_Encoder():
     }
 
     # Extract categorical columns and their reference values to drop
-    cat_columns = list(refs.keys())
-    drop_specs = [refs[col] for col in cat_columns]
+    cat_columns = list(refs.keys()) # Get the categorical columns
+    refs_to_drop = [refs[col] for col in cat_columns] # Get the reference values to drop  
+    print("DROP SPECS:", refs_to_drop)
     
     # Create a OneHotEncoder with drop specifications
-    ohe = OneHotEncoder(drop=drop_specs, sparse_output=False, handle_unknown='ignore')
+    ohe = OneHotEncoder(drop=refs_to_drop, sparse_output=False, handle_unknown='ignore')
     
     # Apply the encoder to the specified categorical columns
     column_transformer = ColumnTransformer(
         transformers=[
-            ('ohe', ohe, cat_columns)  # Apply the encoder to the categorical columns
+            ('ohe', ohe, cat_columns)  
         ], remainder='passthrough'  # Keep other columns unchanged
     )
     
     # Fit and transform the DataFrame
     df_transformed = column_transformer.fit_transform(df)
+    print("DF TRANSFORMED:", df_transformed)
     
     # Get the transformed column names
     ohe_feature_names = column_transformer.named_transformers_['ohe'].get_feature_names_out(cat_columns)
+    print("FT NAMES: ", ohe_feature_names)
     
     # Convert the result back to a DataFrame
     df_encoded = pd.DataFrame(df_transformed, columns=np.append(ohe_feature_names, df.drop(columns=cat_columns).columns))
-    print(df_encoded.info())
+    print("\n Encoded df:", df_encoded.info())
 
     return df_encoded
 
 
 Cat_Encoder()
 
-target =  input('Target name: ') #'BIneg_new'
+target =  "BIneg_new" # input('Target name: ')
 X = df_encoded.drop(columns=[target])
 y = df_encoded[target]
 
+#TODO: PVALUE, SIGNIFICANCE, ERROR
 
-# Train Test Val Split Function
+
 def Ttv_Split():
     """
 
@@ -152,29 +142,32 @@ def Ttv_Split():
 
     return  X_train, X_test, X_val, y_val, y_train, y_test
 
-# Ttv_Split()
-
 
 def Create_Model():
 
     """
 
-    Function to create a logistic regression model with elastic net regularization.
+    Function to
+
         1. Initialize logistic regression model with elastic net regularization: log_reg_e
             The l1_ratio parameter controls the mix of L1 and L2 regularization: 0.5   
             C controls the sparsity: the smaller C the fewer features selected: 0.1
-        2. Fits the model on the training data.
+        2. Resample the training data using SMOTE to handle class imbalance.
+        3. Fits the model on the training data.
     
     """
 
     global X_train, y_train, log_reg_e
 
     log_reg_e = LogisticRegression(penalty='elasticnet', solver ='saga', l1_ratio=0.5, C = 0.1)
+    
+    sm = SMOTE(random_state=42)
+    X_train, y_train = sm.fit_resample(X_train, y_train)
+    
     log_reg_e.fit(X_train, y_train)
 
     return log_reg_e
 
-# Create_Model()
 
 def Feature_Selection():
 
@@ -184,16 +177,22 @@ def Feature_Selection():
 
     Inputs
         1. SelectFromModel: Selects features based on the fitted model.
-        2. 
-        3.  transforms both the training and validation datasets (`X_train` and `X_val`) 
-        to include only the selected features.
+            -  Threshold parameter: If None and if the estimator has a parameter penalty set to l1, 
+                    either explicitly or implicitly (e.g, Lasso), the threshold used is 1e-5.
+            #TODO: Implement?: max_features int, callable, default=None.
+                If an integer, then it specifies the maximum number of features to allow. 
+                If a calable, then it specifies how to calculate the maximum number of features allowed by using the output of max_features(X).
+                To only select based on max_features, set threshold=-np.inf.
+        2. selected_features_mask: A mask indicating which features were selected.
+        3. selected_features: The names of the selected features from mask
+        4. Transforms the training and validation datasets to `X_train_ft` and `X_val_ft`) to include only the selected features.
     
     """
 
     global X_train, X_val, X_val_ft, log_reg_e, X_train_ft, selected_features
     
     model_log_features = SelectFromModel(log_reg_e, prefit=True)
-    selected_features_mask = model_log_features.get_support() # TODO: see the hyperparameters for this 
+    selected_features_mask = model_log_features.get_support()
     selected_features = X_train.columns[selected_features_mask]
 
     X_train_ft = pd.DataFrame(model_log_features.transform(X_train), columns=selected_features)
@@ -201,22 +200,23 @@ def Feature_Selection():
 
     return X_train, X_val, X_val_ft, log_reg_e, X_train_ft, selected_features
 
-# Feature_Selection()
 
 def Parameter_Tuning():
 
     """
+
+    Function to tune hyperparameters and refit model on selected features.
  
-    Computes class weights to handle class imbalance.
-    Performs a grid search to find the best hyperparameters for the logistic regression model.
-    Refits the logistic regression model with the best hyperparameters on the selected features.
-    Makes predictions on the validation data.
+    1. Computes class weights to handle class imbalance.
+    2. Performs a grid search to find the best hyperparameters for the logistic regression model.
+    3. Refits the logistic regression model with the best hyperparameters on the selected features.
+    4. Makes predictions on the validation data.
 
     """
 
     global  y_train, X_train_ft, X_val_ft, log_reg_e, log_reg_e_ft, y_proba_ft, y_pred_ft
 
-    # # Compute class weights
+    #compute weights for class imbalance based on frequency in training data
     class_weights = compute_class_weight('balanced', classes=np.unique(y_train), y=y_train)
     class_weight_dict = {i: class_weights[i] for i in range(len(class_weights))}
 
@@ -231,12 +231,9 @@ def Parameter_Tuning():
     print("Best parameters found: ", best_params)
     print("Best score found: ", grid_search.best_score_)
 
-    # Refit the logistic regression model on X_train_ft
+    # Refit the logistic regression model on X_train_ft using balanced classes and best params.
     log_reg_e_ft = LogisticRegression(class_weight=class_weight_dict, **best_params).fit(X_train_ft, y_train)
     print('Class weight', class_weight_dict)
-
-    #TODO: intentional resampling of pts w/ neg body img. SMOTE. To include in elastic net. aka internal trick to learn more from underrepped group.
-    #Separate workbook/pipeline test. 
 
     # Predictions
     y_pred_ft = log_reg_e_ft.predict(X_val_ft)
@@ -244,21 +241,19 @@ def Parameter_Tuning():
 
     return y_train, X_train_ft, X_val_ft, log_reg_e, log_reg_e_ft, y_proba_ft, y_pred_ft
 
-# Parameter_Tuning()
-
 def Feature_Importance():
 
     """ 
     Fucntion to:
 
-    1. Computes feature importance using coefficients, and odds ratios (of selected features).
-    2. Calculates standard errors and confidence intervals for coefficients.
-    3. Creates a DataFrame of features, coefficients, and odds ratios.
-    4. Plots the odds ratios with 95% confidence intervals.
+    1. Compute feature importance using coefficients, and odds ratios (of selected features).
+    2. Calculate standard errors and confidence intervals for coefficients.
+    3. Create a DataFrame of features, coefficients, and odds ratios.
+    4. Plot the odds ratios with 95% confidence intervals.
 
     """
 
-    global log_reg_e_ft, selected_features, X_train_ft, coef, odds_ratios, ci_lower_or, ci_upper_or, feature_importance, or_ci_plot
+    global log_reg_e_ft, selected_features, X_train_ft, coef, odds_ratios, ci_lower_or, ci_upper_or, feature_importance, or_ci_plot, model_name, date_time
 
     feature_importance = pd.Series(log_reg_e_ft.coef_.flatten(), index=selected_features)
     feature_importance = feature_importance.round(3)
@@ -290,35 +285,37 @@ def Feature_Importance():
         'CI Lower': ci_lower_or,
         'CI Upper': ci_upper_or
     })
+
+    csv_file_path = os.path.join(target_folder, f'{model_name}_Feature Importance_{date_time}.csv')
+    feature_importance_df.to_csv(csv_file_path, index=False)
+    
     print('\n', feature_importance_df)
     
     # Plot OR & CI
-    plt.figure(figsize=(12, 12))
+    plt.figure(figsize=(10, 10))
     plt.errorbar(feature_importance_df['Odds Ratio'], feature_importance_df['Feature'],
                 xerr=[feature_importance_df['Odds Ratio'] - feature_importance_df['CI Lower'],
                     feature_importance_df['CI Upper'] - feature_importance_df['Odds Ratio']],
                 fmt='o', ecolor='r', capsize=5, capthick=2)
     plt.axvline(x=1, color='gray', linestyle='--')
-    plt.yticks(rotation=0)
-    plt.ylabel('Features')
-    plt.xlabel('Odds Ratio')
-    plt.title('Odds Ratios with 95% Confidence Intervals')
+    plt.yticks(rotation=0, fontsize=11)
+    plt.ylabel('Features', fontsize=11)
+    plt.xlabel('Odds Ratio', fontsize=11)
+    plt.title(f'Odds Ratios with 95% Confidence Intervals ({model_name})', fontsize=13)
     plt.tight_layout()
 
     # Save the figure to a file in target folder
-    plt.savefig(os.path.join(target_folder, f'{file_name}_odds_ratios_ci_plot.svg'), format='svg')
+    plt.savefig(os.path.join(target_folder, f'{model_name}_odds_ratios_ci_plot_{date_time}.svg'), format='svg')
 
     # Save the figure to a BytesIO object
     or_ci_plot = BytesIO()
     plt.savefig(or_ci_plot, format='jpg')
-    or_ci_plot.seek(0)  # Rewind the BytesIO object to the beginning
-    plt.close()
-
+    or_ci_plot.seek(0)  
     plt.show()
+    plt.close()
 
     return coef, ci_lower_or, ci_upper_or, odds_ratios, feature_importance, feature_importance_df, or_ci_plot
 
-# Feature_Importance()
 
 def Evaluations(y_val, y_pred_ft, y_proba_ft, X_train_ft):
 
@@ -329,7 +326,7 @@ def Evaluations(y_val, y_pred_ft, y_proba_ft, X_train_ft):
     Input:
     - y_val (pd.Series): The validation target variable.
     - y_pred_ft (np.ndarray): The predicted labels for the validation set.
-    - X_train_ft (pd.DataFrame): The transformed training feature set with selected features. #TODO: Check if this is correct (along with the others being an np array (but works anyway))
+    - X_train_ft (pd.DataFrame): The transformed training feature set with selected features.
     - y_proba_ft (np.ndarray): The predicted probabilities for the validation set.
     
     Output: Evaluates the model using various metrics:
@@ -337,74 +334,74 @@ def Evaluations(y_val, y_pred_ft, y_proba_ft, X_train_ft):
     - Correlation matrix: Correlation coefficient between each pair of variables. Pearson's r: -1 to 1. 0 = no correlation. Linear relationship.
     - ROC Curve and AUC: AUC = 0.5 (random) to 1 (perfect).
         - ROC AUC Score: The area under the ROC curve.
+    Metrics:
     - Balanced accuracy: It is defined as the average of recall obtained on each class.
     - Accuracy Score: The proportion of true results among the total number of cases examined.
     - Precision Score: The proportion of true positive results among the positive results.
     - Recall Score: The proportion of true positive results among the true positive and false negative results.
     - F1 Score: The weighted average of precision and recall
     - Log Loss: The loss function for logistic regression.
-    TODO: Add metrics dict.
 
     """
 
-    global metrics_ft, conf_matrix, correlation_matrix, auc, fpr, tpr, confusion_matrix_plot, correlation_matrix_plot, roc_curve_plot
-    # confusion_matrix_plot, correlation_matrix_plot, roc_curve_plot
+    global metrics_ft, conf_matrix, correlation_matrix, auc, fpr, tpr, confusion_matrix_plot, correlation_matrix_plot, roc_curve_plot, model_name, date_time
 
-    # Confusion Matrix: compare actual vs predicted values.
+    # Confusion Matrix
     conf_matrix = confusion_matrix(y_val, y_pred_ft)
-    plt.figure(figsize=(12, 12)) 
-    sns.set(font_scale=1)
+    plt.figure(figsize=(10, 10)) 
+    sns.set(font_scale=1.3)
     sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues', cbar=False,
                 xticklabels=['Predicted Negative', 'Predicted Positive'],
                 yticklabels=['Actual Negative', 'Actual Positive'])
     plt.xlabel('Predicted')
     plt.ylabel('Actual')
-    plt.title('Confusion Matrix')
+    plt.title(f'Confusion Matrix ({model_name})', fontsize=13)
     
-    plt.savefig(os.path.join(target_folder, f'{file_name}_confusion_matrix_plot.svg'), format='svg') # Save the figure to a file
+    plt.savefig(os.path.join(target_folder, f'{model_name}_confusion_matrix_plot.svg_{date_time}.svg'), format='svg') # Save the figure to a file
     confusion_matrix_plot = BytesIO() # Save the figure to a BytesIO object
     plt.savefig(confusion_matrix_plot, format='jpg')
-    confusion_matrix_plot.seek(0)  # Rewind the BytesIO object to the beginning
+    confusion_matrix_plot.seek(0)
     plt.show()
     plt.close()
 
-    # Correlation matrix: Correlation coefficient between each pair of variables. Pearson's r: -1 to 1. 0 = no correlation. Linear relationship.
-    correlation_matrix = X_train_ft.corr() #FIXME: Gets cut off
-    plt.figure(figsize=(12, 12))
-    sns.set(font_scale=1)
-    sns.heatmap(correlation_matrix, annot=True, cmap="YlGn", linewidths=.5)
-    plt.title("Correlation Matrix Heatmap of All Variables")
+    # Correlation matrix
+    correlation_matrix = X_train_ft.corr()
+    plt.figure(figsize=(20, 20))
+    # sns.set(font_scale=1.3) #xtick y tick
+    plt.xticks(fontsize=13)
+    plt.yticks(fontsize=13)
+    sns.heatmap(correlation_matrix, annot=True, cmap="RdYlGn", linewidths=.5)
+    plt.title(f"Correlation Matrix Heatmap of All Variables ({model_name})", fontsize=13)
     plt.legend(loc='best')
 
 
-    plt.savefig(os.path.join(target_folder, f'{file_name}_correlation_matrix_plot.svg'), format='svg') # Save the figure to a file
-
+    plt.savefig(os.path.join(target_folder, f'{model_name}_correlation_matrix_plot_{date_time}.svg'), format='svg') # Save the figure to a file
     correlation_matrix_plot = BytesIO() # Save the figure to a BytesIO object
-    plt.savefig(correlation_matrix_plot, format='jpg') #FIXME: save with file name
-    correlation_matrix_plot.seek(0)  # Rewind the BytesIO object to the beginning
+    plt.savefig(correlation_matrix_plot, format='jpg') 
+    correlation_matrix_plot.seek(0)
     plt.show()
     plt.close()
 
     # ROC Curve and AUC
     fpr, tpr, _ = roc_curve(y_val, y_proba_ft[:, 1])
-    auc = roc_auc_score(y_val, y_proba_ft[:, 1])
+    auc = round(roc_auc_score(y_val, y_proba_ft[:, 1]), 3)
     plt.figure(figsize=(12, 12))
     plt.plot(fpr, tpr, label=f'AUC = {auc:.2f}')
     plt.plot([0, 1], [0, 1], 'k--')
     plt.xlabel('False Positive Rate')
     plt.ylabel('True Positive Rate')
-    plt.title(f'ROC Curve {file_name}')
+    plt.title(f'ROC Curve ({model_name})', fontsize=13)
     plt.legend(loc='best')
 
-    plt.savefig(os.path.join(target_folder, f'{file_name}_ROC_Curve_plot.svg'), format='svg') # Save the figure to a file
+    plt.savefig(os.path.join(target_folder, f'{model_name}_ROC_Curve_plot_{date_time}.svg'), format='svg')
 
     roc_curve_plot = BytesIO() # Save the figure to a BytesIO object
     plt.savefig(roc_curve_plot, format='jpg')
-    roc_curve_plot.seek(0) # Rewind the BytesIO object to the beginning
+    roc_curve_plot.seek(0)
     plt.show()
     plt.close()
 
-    # Balanced accuracy: It is defined as the average of recall obtained on each class.
+    # Other Metrics
     metrics_ft = {
         'Accuracy Score': round(accuracy_score(y_val, y_pred_ft), 3),
         'Balanced Accuracy Score': round(balanced_accuracy_score(y_val, y_pred_ft), 3),
@@ -415,14 +412,11 @@ def Evaluations(y_val, y_pred_ft, y_proba_ft, X_train_ft):
         'ROC AUC Score': round(roc_auc_score(y_val, y_proba_ft[:, 1]), 3)
         }
 
-    # Print metrics one line after the other
+    # Print metrics
     for metric, value in metrics_ft.items():
         print(f'{metric}: {value}')
 
     return conf_matrix, correlation_matrix, auc, metrics_ft 
-    # confusion_matrix_plot, correlation_matrix_plot, roc_curve_plot
-
-# Evaluations(y_val, y_pred_ft, y_proba_ft, X_train_ft)
 
 
 def save_outputs():
@@ -437,19 +431,11 @@ def save_outputs():
     4. Save the PDF to a specific folder.
 
     '''
-    global date_time, file_name, file_path, target, metrics_ft, auc, coef, odds_ratios, ci_lower_or, ci_upper_or, feature_importance, selected_features, conf_matrix, correlation_matrix, fpr, tpr, y_val, y_pred_ft, y_proba_ft,confusion_matrix_plot, correlation_matrix_plot, roc_curve_plot, or_ci_plot
-
-    # Define the target folder #FIXME: see if  global. If so then would need to eg. print a list of all the items in the folder to see whats there, but if in this function we can immediately see.. 
-    # So do we save within original function (whcih makes sense) 
-    # maybeput target_foler as global & the os.makedirs below.
-
-    # Get current date and time
-    now = datetime.now()
-    date_time = now.strftime("%d-%m %H:%M")
+    global date_time, file_name, target, metrics_ft, auc, coef, odds_ratios, ci_lower_or, ci_upper_or, feature_importance, selected_features, conf_matrix, correlation_matrix, fpr, tpr, y_val, y_pred_ft, y_proba_ft,confusion_matrix_plot, correlation_matrix_plot, roc_curve_plot, or_ci_plot
 
     # Text data
     data_text = {
-        'DS': file_name,
+        'Model': file_name,
         'Date': date_time,
         'Accuracy': metrics_ft['Accuracy Score'],
         'Precision': metrics_ft['Precision Score'],
@@ -471,7 +457,7 @@ def save_outputs():
     pdf.set_font("Courier", size=12)
 
     # # Add text data to PDF
-    for key in ['DS', 'Date', 'Accuracy', 'Precision', 'Recall', 'F1 Score', 'AUC', 'Log Loss']:
+    for key in ['Model', 'Date', 'Accuracy', 'Precision', 'Recall', 'F1 Score', 'AUC', 'Log Loss']:
         pdf.cell(200, 10, txt=f"{key}: {data_text[key]}", ln=True)
 
     # Calculate column width --> fit on page properly
@@ -532,11 +518,8 @@ def save_outputs():
     pdf.add_page()
     pdf.image(roc_curve_plot_path, x=10, y=50, w=190)
 
-
-    pdf_file_name = os.path.join(target_folder, f"{file_name}_output.pdf")
+    pdf_file_name = os.path.join(target_folder, f"{model_name}_{date_time}_output.pdf") #Add SMOTE if used
     pdf.output(pdf_file_name)
-    # print(f"PDF saved to: {pdf_file_name}")
-
 
 # save_outputs()
 
@@ -545,7 +528,7 @@ def Preprocessing(explore, rename, split, log_eval, save):
 
     """
 
-    Function to preprocess the data and evaluate the model.
+    Function to preprocess the data and then evaluate the model on feature selection.
 
     - explore: bool - whether to explore the data (head, info, describe).
     - rename: bool - whether to rename the columns of the dataset.
@@ -553,6 +536,7 @@ def Preprocessing(explore, rename, split, log_eval, save):
     - log_eval: bool - whether to create, perform feature selection
         parameter tuning, feature importance calculations
         and evaluate the model.
+    - save: bool - whether to save the outputs to a PDF file.
     
     """
     if explore == True:
@@ -572,5 +556,5 @@ def Preprocessing(explore, rename, split, log_eval, save):
         save_outputs()
 
 if __name__ == "__main__":
-    Preprocessing(False, False, True, True, True)
+    Preprocessing(explore=True, rename=False, split=True, log_eval=True, save=True)
 
