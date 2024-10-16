@@ -15,26 +15,36 @@ from sklearn.preprocessing import OneHotEncoder
 from sklearn.compose import ColumnTransformer
 from imblearn.over_sampling import SMOTE
 import os
-from fpdf import FPDF
-from io import BytesIO
-import tempfile
+import reportlab
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, PageBreak
+from reportlab.lib import colors
+import PyPDF2 
+from PyPDF2 import PdfMerger
 
+
+
+
+# Get current date and time
+now = datetime.now()
+date_time = now.strftime("%d-%m_%H-%M")
+date = now.strftime("%d-%m")
 
 base_path = "../"
 target_folder_name = input('PDF (Destination) folder name: ')
-target_folder = os.path.join(base_path, target_folder_name, 'Outputs')
+target_folder = os.path.join(base_path, target_folder_name, f"{date}_Outputs")
 os.makedirs(target_folder, exist_ok=True) 
-model_name = input("Please enter the MODEL_NAME: ")
-model_file_path = os.path.join(base_path, target_folder_name, f"{model_name}.csv")
+model_name = input("Please enter the model name: ") #FIXME: not modelname anmyore
+# model_file_path = os.path.join(base_path, target_folder_name, f"{model_name}.csv")
+model_file_path = input("Please enter the model file path: ")
 df_og = pd.read_csv(model_file_path, delimiter=',', encoding='latin1')
-df = df_og.copy()
+df = pd.DataFrame(df_og.copy())
+df.drop(columns='leeft', inplace=True)
 
 path_parts = model_file_path.split(os.sep) # Split the file path by the directory separator
 file_name = path_parts[-1] # Extract the second to last part of the split path
 
-# Get current date and time
-now = datetime.now()
-date_time = now.strftime("%d-%m %H:%M")
 
 def Data_Exploration(df):
     print("\n Visualize original data before processing \n")
@@ -42,9 +52,42 @@ def Data_Exploration(df):
     print(df.info())
     print(df.describe())
 
-# def Rename_Col(df):
-#     df.rename(columns = {column_name:new_column_name}, inplace = True)
-#     return df
+def Rename_Col(df):
+
+    global X, y
+
+    columns_to_rename = {
+        "ql": "Global Health Status",
+        "pf": "Physical Functioning",
+        "sf": "Social Functioning",
+        "ef": "Emotional Functioning",
+        "cf": "Cognitive Functioning",
+        "rf": "Role Functioning",
+        "maladaptive": "Maladaptive Coping Style",
+        "nsurv94dich": "Sexual Attractiveness", # self-perception of own sexual attractiveness
+        "Targetnew": "Targeted Therapy",
+        "Hormnew": "Hormone Therapy",
+        "RTnew": "Radiation Therapy",
+        "chemonew": "Chemotherapy",
+        "partner": "Partner",
+        "alg_v1b": "Biological Sex",
+        "stadium_opgeschoond": "Tumour Stage",
+        "tumsoort_hoofd_new2": "Tumour Type",
+        "edu": "Education Level",
+        "tijddiagngroep": "Time Since Diagnosis",
+        "BMIgroups2": "BMI Group",
+        "BIneg_new": "Negative Body Image"
+    }
+
+    df.rename(columns=columns_to_rename, inplace=True)
+    X = df.drop(columns=["Negative Body Image"])
+    y = df["Negative Body Image"]
+    print(df.info())
+
+    return df
+
+
+
 
 def Cat_Encoder():
 
@@ -62,16 +105,18 @@ def Cat_Encoder():
     Returns:
     - df_encoded (pd.DataFrame): The DataFrame with categorical columns encoded and other columns unchanged.
    
+    # Binary features are not encoded.
+
     """
 
-    global refs, df_encoded
+    global refs, df_encoded, X
 
     refs = {
-        "edu": 3.0, #FIXME: Given data, no 2.0.
-        "tumsoort_hoofd_new2": 1.0,
-        "stadium_opgeschoond": 1.0,
-        "tijddiagngroep": 3.0,
-        "BMIgroups2": 1.0
+        "Education Level": 3.0, #FIXME: Given data, no 2.0.
+        "Tumour Type": 1.0,
+        "Tumour Stage": 1.0,
+        "Time Since Diagnosis": 3.0,
+        "BMI Group": 1.0,
     }
 
     # Extract categorical columns and their reference values to drop
@@ -91,7 +136,7 @@ def Cat_Encoder():
     
     # Fit and transform the DataFrame
     df_transformed = column_transformer.fit_transform(df)
-    print("DF TRANSFORMED:", df_transformed)
+    print("DF (X) TRANSFORMED:", df_transformed)
     
     # Get the transformed column names
     ohe_feature_names = column_transformer.named_transformers_['ohe'].get_feature_names_out(cat_columns)
@@ -104,13 +149,9 @@ def Cat_Encoder():
     return df_encoded
 
 
-Cat_Encoder()
+# Cat_Encoder()
 
-target =  "BIneg_new" # input('Target name: ')
-X = df_encoded.drop(columns=[target])
-y = df_encoded[target]
-
-#TODO: PVALUE, SIGNIFICANCE, ERROR
+#TODO: PVALUE, ERROR
 
 
 def Ttv_Split():
@@ -130,11 +171,6 @@ def Ttv_Split():
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.1, random_state=42)
     X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.2, random_state=42)
     print(f'\n X_train shape: {X_train.shape}, y_train shape: {y_train.shape}, \n X_test shape: {X_test.shape}, y_test shape: {y_test.shape}, \n X_val shape: {X_val.shape}, y_val shape: {y_val.shape}')
-
-    scaler = StandardScaler() 
-    X_train = scaler.fit_transform(X_train)
-    X_val = scaler.transform(X_val)
-    X_test = scaler.transform(X_test)
 
     X_train = pd.DataFrame(X_train, columns=X.columns)
     X_val = pd.DataFrame(X_val, columns=X.columns)
@@ -222,7 +258,7 @@ def Parameter_Tuning():
 
     param_grid_elas = {
         'l1_ratio': [0.1, 0.3, 0.5, 0.7, 0.9, 1.0],  # Range of l1_ratio values to search
-        'C': [0.1, 1, 10, 100],  # Range of regularization strengths. Smaller values, stronger regularization. 0.01 resulted in 'no predicted samples' for precision and would have to initiate the zero_division parameter.
+        'C': [0.01, 0.1, 1, 10, 100],  # Range of regularization strengths. Smaller values, stronger regularization. 0.01 resulted in 'no predicted samples' for precision and would have to initiate the zero_division parameter.
             }
     scoring_metrics = ['accuracy', 'precision', 'recall', 'f1', 'roc_auc']
     grid_search = GridSearchCV(log_reg_e, param_grid=param_grid_elas, scoring=scoring_metrics, refit='accuracy', cv=5) 
@@ -241,6 +277,7 @@ def Parameter_Tuning():
 
     return y_train, X_train_ft, X_val_ft, log_reg_e, log_reg_e_ft, y_proba_ft, y_pred_ft
 
+
 def Feature_Importance():
 
     """ 
@@ -253,7 +290,7 @@ def Feature_Importance():
 
     """
 
-    global log_reg_e_ft, selected_features, X_train_ft, coef, odds_ratios, ci_lower_or, ci_upper_or, feature_importance, or_ci_plot, model_name, date_time
+    global log_reg_e_ft, selected_features, X_train_ft, coef, odds_ratios, ci_lower_or, ci_upper_or, feature_importance, or_ci_plot, model_name, date_time, feature_importance_df
 
     feature_importance = pd.Series(log_reg_e_ft.coef_.flatten(), index=selected_features)
     feature_importance = feature_importance.round(3)
@@ -286,8 +323,8 @@ def Feature_Importance():
         'CI Upper': ci_upper_or
     })
 
-    csv_file_path = os.path.join(target_folder, f'{model_name}_Feature Importance_{date_time}.csv')
-    feature_importance_df.to_csv(csv_file_path, index=False)
+    ft_impt_file_path = os.path.join(target_folder, f'{model_name}_Feature_Importance_Table_{date_time}.csv')
+    feature_importance_df.to_csv(ft_impt_file_path, index=False)
     
     print('\n', feature_importance_df)
     
@@ -304,13 +341,9 @@ def Feature_Importance():
     plt.title(f'Odds Ratios with 95% Confidence Intervals ({model_name})', fontsize=13)
     plt.tight_layout()
 
-    # Save the figure to a file in target folder
-    plt.savefig(os.path.join(target_folder, f'{model_name}_odds_ratios_ci_plot_{date_time}.svg'), format='svg')
+    plt.savefig(os.path.join(target_folder, f'{model_name}_OR_CI_Plot_{date_time}.pdf'), format='pdf') # Save the figure to a file
+    or_ci_plot = os.path.join(target_folder, f'{model_name}_OR_CI_Plot_{date_time}.pdf')
 
-    # Save the figure to a BytesIO object
-    or_ci_plot = BytesIO()
-    plt.savefig(or_ci_plot, format='jpg')
-    or_ci_plot.seek(0)  
     plt.show()
     plt.close()
 
@@ -357,63 +390,60 @@ def Evaluations(y_val, y_pred_ft, y_proba_ft, X_train_ft):
     plt.ylabel('Actual')
     plt.title(f'Confusion Matrix ({model_name})', fontsize=13)
     
-    plt.savefig(os.path.join(target_folder, f'{model_name}_confusion_matrix_plot.svg_{date_time}.svg'), format='svg') # Save the figure to a file
-    confusion_matrix_plot = BytesIO() # Save the figure to a BytesIO object
-    plt.savefig(confusion_matrix_plot, format='jpg')
-    confusion_matrix_plot.seek(0)
+    plt.savefig(os.path.join(target_folder, f'{model_name}_Confusion_Matrix_Plot_{date_time}.pdf'), format='pdf') # Save the figure to a file
+    confusion_matrix_plot = os.path.join(target_folder, f'{model_name}_Confusion_Matrix_Plot_{date_time}.pdf')
+
     plt.show()
     plt.close()
 
     # Correlation matrix
-    correlation_matrix = X_train_ft.corr()
-    plt.figure(figsize=(20, 20))
-    # sns.set(font_scale=1.3) #xtick y tick
-    plt.xticks(fontsize=13)
-    plt.yticks(fontsize=13)
+    correlation_matrix = X_train_ft.corr(method="spearman")
+    plt.figure(figsize=(15, 15))
+    plt.xticks(fontsize=14)
+    plt.yticks(fontsize=14)
+    plt.tight_layout()
     sns.heatmap(correlation_matrix, annot=True, cmap="RdYlGn", linewidths=.5)
-    plt.title(f"Correlation Matrix Heatmap of All Variables ({model_name})", fontsize=13)
-    plt.legend(loc='best')
+    plt.title(f"Correlation Matrix Heatmap of All Variables ({model_name})", fontsize=25)
 
+    plt.savefig(os.path.join(target_folder, f'{model_name}_Correlation_Matrix_Plot_{date_time}.pdf'), format='pdf') # Save the figure to a file
+    correlation_matrix_plot = os.path.join(target_folder, f'{model_name}_Correlation_Matrix_Plot_{date_time}.pdf')
 
-    plt.savefig(os.path.join(target_folder, f'{model_name}_correlation_matrix_plot_{date_time}.svg'), format='svg') # Save the figure to a file
-    correlation_matrix_plot = BytesIO() # Save the figure to a BytesIO object
-    plt.savefig(correlation_matrix_plot, format='jpg') 
-    correlation_matrix_plot.seek(0)
     plt.show()
     plt.close()
 
     # ROC Curve and AUC
     fpr, tpr, _ = roc_curve(y_val, y_proba_ft[:, 1])
     auc = round(roc_auc_score(y_val, y_proba_ft[:, 1]), 3)
-    plt.figure(figsize=(12, 12))
+    plt.figure(figsize=(15, 15))
     plt.plot(fpr, tpr, label=f'AUC = {auc:.2f}')
     plt.plot([0, 1], [0, 1], 'k--')
-    plt.xlabel('False Positive Rate')
-    plt.ylabel('True Positive Rate')
-    plt.title(f'ROC Curve ({model_name})', fontsize=13)
+    plt.xlabel('False Positive Rate', fontsize=18)
+    plt.ylabel('True Positive Rate', fontsize=18)
+    plt.xticks(fontsize=15)
+    plt.yticks(fontsize=15)
+    # plt.tight_layout()
+    plt.title(f'ROC Curve ({model_name})', fontsize=20)
     plt.legend(loc='best')
+    
+    plt.savefig(os.path.join(target_folder, f'{model_name}_ROC_Curve_Plot_{date_time}.pdf'), format='pdf') # Save the figure to a file
+    roc_curve_plot = os.path.join(target_folder, f'{model_name}_ROC_Curve_Plot_{date_time}.pdf')
 
-    plt.savefig(os.path.join(target_folder, f'{model_name}_ROC_Curve_plot_{date_time}.svg'), format='svg')
-
-    roc_curve_plot = BytesIO() # Save the figure to a BytesIO object
-    plt.savefig(roc_curve_plot, format='jpg')
-    roc_curve_plot.seek(0)
     plt.show()
     plt.close()
 
-    # Other Metrics
-    metrics_ft = {
-        'Accuracy Score': round(accuracy_score(y_val, y_pred_ft), 3),
-        'Balanced Accuracy Score': round(balanced_accuracy_score(y_val, y_pred_ft), 3),
-        'Precision Score': round(precision_score(y_val, y_pred_ft), 3),
-        'Recall Score': round(recall_score(y_val, y_pred_ft), 3),
-        'F1 Score': round(f1_score(y_val, y_pred_ft), 3),
-        'Log Loss': round(log_loss(y_val, y_proba_ft), 3),
-        'ROC AUC Score': round(roc_auc_score(y_val, y_proba_ft[:, 1]), 3)
-        }
+    # Metrics
+    metrics_ft = [
+        ['Accuracy Score', round(accuracy_score(y_val, y_pred_ft), 3)],
+        ['Balanced Accuracy Score', round(balanced_accuracy_score(y_val, y_pred_ft), 3)],
+        ['Precision Score', round(precision_score(y_val, y_pred_ft), 3)],
+        ['Recall Score', round(recall_score(y_val, y_pred_ft), 3)],
+        ['F1 Score', round(f1_score(y_val, y_pred_ft), 3)],
+        ['Log Loss', round(log_loss(y_val, y_proba_ft), 3)],
+        ['ROC AUC Score', round(roc_auc_score(y_val, y_proba_ft[:, 1]), 3)]
+    ]
 
     # Print metrics
-    for metric, value in metrics_ft.items():
+    for metric, value in metrics_ft:
         print(f'{metric}: {value}')
 
     return conf_matrix, correlation_matrix, auc, metrics_ft 
@@ -431,97 +461,90 @@ def save_outputs():
     4. Save the PDF to a specific folder.
 
     '''
-    global date_time, file_name, target, metrics_ft, auc, coef, odds_ratios, ci_lower_or, ci_upper_or, feature_importance, selected_features, conf_matrix, correlation_matrix, fpr, tpr, y_val, y_pred_ft, y_proba_ft,confusion_matrix_plot, correlation_matrix_plot, roc_curve_plot, or_ci_plot
+    global date_time, file_name, metrics_ft, coef, odds_ratios, ci_lower_or, ci_upper_or, feature_importance, selected_features, confusion_matrix_plot, correlation_matrix_plot, roc_curve_plot, or_ci_plot, img_txt_output_pdf, text_output_pdf, feature_importance_df
 
     # Text data
     data_text = {
         'Model': file_name,
         'Date': date_time,
-        'Accuracy': metrics_ft['Accuracy Score'],
-        'Precision': metrics_ft['Precision Score'],
-        'Recall': metrics_ft['Recall Score'],
-        'F1 Score': metrics_ft['F1 Score'],
-        'AUC': auc,
-        'Log Loss': metrics_ft['Log Loss'],
-        'Coefficients': coef.tolist(),
-        'Odds Ratios': odds_ratios.tolist(),
-        'Confidence Intervals': (ci_lower_or.tolist(), ci_upper_or.tolist()),
-        'Feature Importance': feature_importance.tolist(),
-        'Selected Features': selected_features.tolist()
+        'Accuracy': metrics_ft[0][1],
+        'Balanced Accuracy': metrics_ft[1][1],
+        'Precision': metrics_ft[2][1],
+        'Recall': metrics_ft[3][1],
+        'F1 Score': metrics_ft[4][1],
+        'Log Loss': metrics_ft[5][1],
+        'ROC AUC': metrics_ft[6][1],
+
+        # 'Coefficients': coef.tolist(),
+        # 'Odds Ratios': odds_ratios.tolist(),
+        # 'Confidence Intervals': (ci_lower_or.tolist(), ci_upper_or.tolist()),
+        # 'Feature Importance': feature_importance.tolist(),
+        # 'Selected Features': selected_features.tolist()
     }
 
-    # Create a PDF
-    pdf = FPDF()
-    pdf.set_auto_page_break(auto=True, margin=15)
-    pdf.add_page()
-    pdf.set_font("Courier", size=12)
+    # Specify the file name for the new PDF
+    text_output_pdf = os.path.join(target_folder, f'{model_name}_Text_Output_{date_time}.pdf')
 
-    # # Add text data to PDF
-    for key in ['Model', 'Date', 'Accuracy', 'Precision', 'Recall', 'F1 Score', 'AUC', 'Log Loss']:
-        pdf.cell(200, 10, txt=f"{key}: {data_text[key]}", ln=True)
+    # Create a canvas for the PDF, specifying the file name and page size
+    c = canvas.Canvas(text_output_pdf, pagesize=A4)
+    width, height = A4 # Get the width and height of the page
 
-    # Calculate column width --> fit on page properly
-    page_width = pdf.w - 2 * pdf.l_margin
-    num_columns = 4  # Number of columns in the table
-    feature_col_width = page_width * 0.3  # Make the "Feature" column 40% of the page width
-    other_col_width = (page_width - feature_col_width) / (num_columns - 1)  # Distribute remaining width among other columns
+    # Set 1-inch margins (72 points)
+    margin = 72
 
-    # Add table header with custom appearance
-    pdf.set_font("Courier", 'B', 12)
-    pdf.set_fill_color(200, 220, 255)
-    pdf.cell(page_width, 10, txt="Feature Analysis", ln=True, align='C', fill=True) # table title
+    # Usable width and height after applying 1-inch margins
+    usable_width = width - 2 * margin
+    usable_height = height - 2 * margin
 
-    pdf.set_font("Courier", 'B', 10)
-    pdf.cell(feature_col_width, 10, txt="Feature", border=1, fill=True, align='C')
-    pdf.cell(other_col_width, 10, txt="Coefficient", border=1, fill=True, align='C')
-    pdf.cell(other_col_width, 10, txt="Odds Ratio", border=1, fill=True, align='C')
-    pdf.cell(other_col_width, 10, txt="Importance", border=1, fill=True,  align='C')
-    pdf.ln()
+    # Put data_text into a table in the PDF
+    # data = [[key, str(value)] for key, value in data_text.items()]
+    data = [[feature, str(coef), str(odds_ratio), str(importance), str(ci_lower), str(ci_upper)]
+    for feature, coef, odds_ratio, importance, ci_lower, ci_upper in zip(
+        selected_features, coef, odds_ratios, feature_importance, ci_lower_or, ci_upper_or
+    )]
+    t = Table(data, colWidths=[100, 400])  # Adjust column widths as needed
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Courier-Bold'),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black)
+    ]))
 
-    # Add table data with custom appearance
-    pdf.set_font("Courier", '', 10)
-    for i, feature in enumerate(data_text['Selected Features']):  # Iterate over selected features
-        pdf.cell(feature_col_width, 10, txt=str(feature), border=1)  # Feature
-        pdf.cell(other_col_width, 10, txt=str(data_text['Coefficients'][i]), border=1)  # Coefficient
-        ci = f"({data_text['Confidence Intervals'][0][i]}, {data_text['Confidence Intervals'][1][i]})"
-        pdf.cell(other_col_width, 10, txt=str(data_text['Odds Ratios'][i]), border=1)  # Odds Ratio
-        pdf.cell(other_col_width, 10, txt=str(data_text['Feature Importance'][i]), border=1)  # Feature Importance
-        pdf.ln()
+    # Wrap the table within the usable area and draw it on the canvas
+    t.wrapOn(c, usable_width, usable_height)
+    t.drawOn(c, margin, height - margin - t._height)  # Positioning the table within the margins
 
-    # Save BytesIO objects to temporary files
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_or_ci_plot:
-        tmp_or_ci_plot.write(or_ci_plot.getbuffer())
-        or_ci_plot_path = tmp_or_ci_plot.name
+    # Finalize the PDF file
+    c.showPage()  # Finish the current page
+    c.save()  # Save the PDF
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_correlation_matrix_plot:
-        tmp_correlation_matrix_plot.write(correlation_matrix_plot.getbuffer())
-        correlation_matrix_plot_path = tmp_correlation_matrix_plot.name
+    pdf_files = [
+        text_output_pdf,
+        confusion_matrix_plot,
+        correlation_matrix_plot,
+        roc_curve_plot,
+        or_ci_plot
+    ]
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_confusion_matrix_plot:
-        tmp_confusion_matrix_plot.write(confusion_matrix_plot.getbuffer())
-        confusion_matrix_plot_path = tmp_confusion_matrix_plot.name
+    # Create a PdfMerger object
+    merger = PdfMerger()
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_roc_curve_plot:
-        tmp_roc_curve_plot.write(roc_curve_plot.getbuffer())
-        roc_curve_plot_path = tmp_roc_curve_plot.name
+    # Append each file to the merger if it exists
+    for pdf_file in pdf_files:
+        merger.append(f"{pdf_file}")
+    
 
-    # Add a new page for the or_ci_plot
-    pdf.add_page()
-    pdf.image(or_ci_plot_path, x=10, y=50, w=190)
-    # Add a new page for the correlation matrix plot
-    pdf.add_page()
-    pdf.image(correlation_matrix_plot_path, x=10, y=50, w=190)
-    # Add a new page for the confusion matrix plot
-    pdf.add_page()
-    pdf.image(confusion_matrix_plot_path, x=10, y=50, w=190)
-    # Add a new page for the ROC curve plot
-    pdf.add_page()
-    pdf.image(roc_curve_plot_path, x=10, y=50, w=190)
+    # Write the merged PDF to a new file
+    img_txt_output_pdf = os.path.join(target_folder, f'{model_name}_merged_output_{date_time}.pdf')
+    with open(img_txt_output_pdf, "wb") as merged_pdf: 
+        merger.write(merged_pdf)
+    merger.close()
 
-    pdf_file_name = os.path.join(target_folder, f"{model_name}_{date_time}_output.pdf") #Add SMOTE if used
-    pdf.output(pdf_file_name)
+    print(f"Merged PDF created as '{img_txt_output_pdf}'.")
 
-# save_outputs()
 
 
 def Preprocessing(explore, rename, split, log_eval, save):
@@ -542,7 +565,7 @@ def Preprocessing(explore, rename, split, log_eval, save):
     if explore == True:
         Data_Exploration(df)
     if rename == True:
-        Rename_Col()
+        Rename_Col(df)
     if split == True:
         Cat_Encoder()
         Ttv_Split()
@@ -556,5 +579,28 @@ def Preprocessing(explore, rename, split, log_eval, save):
         save_outputs()
 
 if __name__ == "__main__":
-    Preprocessing(explore=True, rename=False, split=True, log_eval=True, save=True)
+    Preprocessing(explore=True, rename=True, split=True, log_eval=True, save=True)
 
+
+    
+    # To add SMOTE if used, P-Value, Error, model parameters.
+
+
+    # # Specify the file name for the new PDF
+    # text_output_pdf = "text_output_pdf.pdf"
+
+    # # Create a canvas for the PDF, specifying the file name and page size
+    # c = canvas.Canvas(text_output_pdf, pagesize=A4)
+    # width, height = A4 # Get the width and height of the page
+
+    # # # Adding some text to the PDF for demonstration
+    # # c.drawString(100, height - 100, "This is the Model Attributes PDF")
+
+
+
+    # # Save the PDF
+    # c.save()
+
+    # print(f"New PDF created as '{text_output_pdf}'.")
+
+    # List of PDF files to merge (ensure they have the .pdf extension)
