@@ -38,6 +38,8 @@ os.makedirs(target_folder, exist_ok=True)
 model_name = input("Please enter the model name: ") #FIXME: not modelname anmyore
 # model_file_path = os.path.join(base_path, target_folder_name, f"{model_name}.csv")
 model_file_path = input("Please enter the model file path: ")
+
+
 df_og = pd.read_csv(model_file_path, delimiter=',', encoding='latin1')
 df = pd.DataFrame(df_og.copy())
 df.drop(columns='leeft', inplace=True)
@@ -56,7 +58,7 @@ def Rename_Col(df):
 
     global X, y
 
-    columns_to_rename = {
+    columns_to_rename = { 
         "ql": "Global Health Status",
         "pf": "Physical Functioning",
         "sf": "Social Functioning",
