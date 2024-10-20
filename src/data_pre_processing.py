@@ -19,8 +19,16 @@ class DataPreProcessing:
         self.df = df.copy()
         if 'leeft' in self.df.columns:
             self.df.drop(columns='leeft', inplace=True)
+
         self.X = None
         self.y = None
+
+        self.X_train = None
+        self.X_test = None
+        self.X_val = None
+        self.y_val = None
+        self.y_train = None
+        self.y_test = None
 
     def Data_Exploration(self):
         print("\n Original data before processing \n")
@@ -28,7 +36,8 @@ class DataPreProcessing:
         print(self.df.info())
         print(self.df.describe())
 
-    def Rename_Col(self):
+    def Rename_Cols(self, df): #FIXME: Should this be _ first? 
+        #FIXME: Specify return type
         columns_to_rename = { 
             "ql": "Global Health Status",
             "pf": "Physical Functioning",
@@ -55,14 +64,10 @@ class DataPreProcessing:
         self.df = self.df.rename(columns=columns_to_rename)
         print("\n Renamed columns in df: \n")
         self.df.info() # Call info() directly to print its output
-
-        self.X = self.df.drop(columns=["Negative Body Image"])
-        self.y = self.df["Negative Body Image"]
-
+        
         return self.df
 
-
-    def Cat_Encoder(self):
+    def Cat_Encoder(self, df):
 
         """
 
@@ -82,8 +87,6 @@ class DataPreProcessing:
 
         """
 
-        # global refs, df_encoded, X
-
         refs = {
             "Education Level": 3.0, #FIXME: Given data, no 2.0.
             "Tumour Type": 1.0,
@@ -93,66 +96,80 @@ class DataPreProcessing:
         }
 
         # Extract categorical columns and their reference values to drop
-        cat_columns = list(refs.keys()) # Get the categorical columns
-        refs_to_drop = [refs[col] for col in cat_columns] # Get the reference values to drop  
+        cat_cols = list(refs.keys()) # Get the categorical columns
+        refs_to_drop = [refs[col] for col in cat_cols] # Get the reference values to drop  
         print("DROP SPECS:", refs_to_drop)
         
         # Create a OneHotEncoder with drop specifications
-        ohe = OneHotEncoder(drop=refs_to_drop, sparse_output=False, handle_unknown='ignore')
+        ohe = OneHotEncoder(drop='first', sparse_output=False, handle_unknown='ignore')
 
         # Apply the encoder to the specified categorical columns
-        column_transformer = ColumnTransformer(
+        cat_col_transformer = ColumnTransformer(
             transformers=[
-                ('ohe', ohe, cat_columns)  
+                ('ohe', ohe, cat_cols)  
             ], remainder='passthrough'  # Keep other columns unchanged
         )
         
         # Fit and transform the DataFrame
-        df_transformed = column_transformer.fit_transform(self.df)
+        df_transformed = cat_col_transformer.fit_transform(self.df)
 
         # Get the transformed column names
-        ohe_feature_names = column_transformer.named_transformers_['ohe'].get_feature_names_out(cat_columns)
+        ohe_feature_names = cat_col_transformer.named_transformers_['ohe'].get_feature_names_out(cat_cols)
         print("Encoded Categorical Features: ", ohe_feature_names)
         
         # Convert the result back to a DataFrame
-        df_encoded = pd.DataFrame(df_transformed, columns=np.concatenate([ohe_feature_names, self.df.drop(columns=cat_columns).columns]))
+        self.df = pd.DataFrame(df_transformed, columns=np.concatenate([ohe_feature_names, self.df.drop(columns=cat_cols).columns]))
         print("\n Encoded df: \n")
-        df_encoded.info()
+        self.df.info()
 
-        return df_encoded
+        self.X = self.df.drop(columns=["Negative Body Image"])
+        print("X INFO")
+        self.X.info()
+
+        self.y = self.df["Negative Body Image"]
+        print("Y INFO")
+        self.y.info()
+
+        return self.df, self.X, self.y
 
 
-    def Ttv_Split(self):
+    def Ttv_Split(self) -> pd.DataFrame:
         """
+
+        #TODO: Maybe we will select different training and test sizes so set up for that. 
 
         Train Test Val (Ttv) Split Function
         
         1. Split the Data into training, validation, and test sets. 
             Split:, 80% training, 20% validation, and 10% test.
-        2. Scale the data.
-        3. Put data into dataframe type.
+        2. Put data into dataframe type.
 
         """
+        train_split_size = 0.8
+        test_split_size = 0.1
+        val_split_size = 0.2
+        # TODO: maybe vars of percentages to multiply for test and val sets.
 
-        X_train, X_test, y_train, y_test = train_test_split(self.X, self.y, test_size=0.1, random_state=42)
-        X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.2, random_state=42)
-        print(f'\n X_train shape: {X_train.shape}, y_train shape: {y_train.shape}, \n X_test shape: {X_test.shape}, y_test shape: {y_test.shape}, \n X_val shape: {X_val.shape}, y_val shape: {y_val.shape}')
+        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(self.X, self.y, test_size=test_split_size, random_state=42)
+        self.X_train, self.X_val, self.y_train, self.y_val = train_test_split(self.X_train, self.y_train, test_size=val_split_size, random_state=42)
+        
+        print(f'\n X_train shape: {self.X_train.shape}, y_train shape: {self.y_train.shape}, \n X_test shape: {self.X_test.shape}, y_test shape: {self.y_test.shape}, \n X_val shape: {self.X_val.shape}, y_val shape: {self.y_val.shape}')
 
-        X_train = pd.DataFrame(X_train, columns=self.X.columns)
-        X_val = pd.DataFrame(X_val, columns=self.X.columns)
-        X_test = pd.DataFrame(X_test, columns=self.X.columns)
-
-        return  X_train, X_test, X_val, y_val, y_train, y_test
+        return self.X_train, self.X_test, self.X_val, self.y_train, self.y_test, self.y_val 
 
 if __name__ == "__main__":
     df_file_path = input("Provide df file path: ")
     df = pd.read_csv(df_file_path, delimiter=',', encoding='latin1')
-    pre_processor = DataPreProcessing(df)
-    pre_processor.Data_Exploration()
-    pre_processor.Rename_Col()
-    pre_processor.Cat_Encoder()
-    pre_processor.Ttv_Split()
+    
+    pre_process_data = DataPreProcessing(df)
+    pre_process_data.Data_Exploration()
+    pre_process_data.Rename_Cols(df)
+    pre_process_data.Cat_Encoder(df)
+    pre_process_data.Ttv_Split()
 
-    # Access X and y
-    X = pre_processor.X
-    y = pre_processor.y
+    
+
+
+
+
+
