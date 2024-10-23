@@ -3,10 +3,10 @@ import os
 
 from data_pre_processing import DataPreProcessing
 
-
 import pandas as pd
 import numpy as np
 import sklearn
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.preprocessing import StandardScaler
@@ -38,8 +38,15 @@ class DataProcessing:
         self.y_proba_ft = None
         self.y_pred_ft = None
         self.feature_importance_df = None
+        self.random_forest = None
+        self.random_forest_ft = None
+        self.model_log_features = None
+        self.selected_features_mask = None
 
-    def Create_Model(self, df):
+        self.sm = SMOTE(random_state=42)
+        self.X_train, self.y_train = self.sm.fit_resample(self.X_train, self.y_train)    
+
+    def Create_Model(self, df, model):
 
         """
 
@@ -53,20 +60,21 @@ class DataProcessing:
         
         """
 
-        self.log_reg_e = LogisticRegression(penalty='elasticnet', solver ='saga', l1_ratio=0.5, C = 0.1)
-        
-        sm = SMOTE(random_state=42)
-        self.X_train, self.y_train = sm.fit_resample(self.X_train, self.y_train)        
-
-        self.log_reg_e.fit(self.X_train, self.y_train)
-
-        ("X_Train info check: ")
-        self.X_train.info()
-
-        return self.log_reg_e, self.X_train, self.y_train
+        if model == 'log_reg':
+            self.log_reg_e = LogisticRegression(penalty='elasticnet', solver ='saga', l1_ratio=0.5, C = 0.1, max_iter=10000, random_state=42)    
+            self.log_reg_e.fit(self.X_train, self.y_train)
+            # return self.log_reg_e
 
 
-    def Feature_Selection(self, df):
+        if model == 'rf':
+            self.random_forest = RandomForestClassifier(n_estimators=100, random_state=42)
+            self.random_forest.fit(self.X_train, self.y_train)
+            # return self.random_forest
+
+        return self.X_train, self.y_train, self.log_reg_e, self.random_forest
+    
+
+    def Feature_Selection(self, df, model):
 
         """
 
@@ -85,20 +93,30 @@ class DataProcessing:
             4. Transforms the training and validation datasets to `X_train_ft` and `X_val_ft`) to include only the selected features.
         
         """
-        
-        model_log_features = SelectFromModel(self.log_reg_e, prefit=True)
-        selected_features_mask = model_log_features.get_support()
-        self.selected_features = self.X_train.columns[selected_features_mask]
 
-        self.X_train_ft = pd.DataFrame(model_log_features.transform(self.X_train), columns=self.selected_features)
-        self.X_val_ft = pd.DataFrame(model_log_features.transform(self.X_val), columns=self.selected_features)
+        if model=="log_reg":
+            self.model_log_features = SelectFromModel(self.log_reg_e, prefit=True)
+            self.selected_features_mask = self.model_log_features.get_support()
+            self.selected_features = self.X_train.columns[self.selected_features_mask]
+            self.X_train_ft = pd.DataFrame(self.model_log_features.transform(self.X_train), columns=self.selected_features)
+            self.X_val_ft = pd.DataFrame(self.model_log_features.transform(self.X_val), columns=self.selected_features)
+
+
+        if model=="rf":
+            self.model_log_features = SelectFromModel(self.random_forest, prefit=True)
+            self.selected_features_mask = self.model_log_features.get_support()
+            self.selected_features = self.X_train.columns[self.selected_features_mask]
+            self.X_train_ft = pd.DataFrame(self.model_log_features.transform(self.X_train), columns=self.selected_features)
+            self.X_val_ft = pd.DataFrame(self.model_log_features.transform(self.X_val), columns=self.selected_features)
+
+
 
         print("\n See selected features in X_train_ft: \n ")
         self.X_train_ft.info()
 
         return self.X_train, self.X_val, self.X_val_ft, self.log_reg_e, self.X_train_ft, self.selected_features
 
-    def Parameter_Tuning(self, df):
+    def Parameter_Tuning(self, df, model):
 
         """
 
@@ -112,31 +130,53 @@ class DataProcessing:
         """
 
         #compute weights for class imbalance based on frequency in training data
-        class_weights = compute_class_weight('balanced', classes=np.unique(self.y_train), y=self.y_train)
-        class_weight_dict = {i: class_weights[i] for i in range(len(class_weights))}
+        self.class_weights = compute_class_weight('balanced', classes=np.unique(self.y_train), y=self.y_train)
+        self.class_weight_dict = {i: self.class_weights[i] for i in range(len(self.class_weights))}
 
-        param_grid_elas = {
-            'l1_ratio': [0.1, 0.3, 0.5, 0.7, 0.9, 1.0],  # Range of l1_ratio values to search
-            'C': [0.01, 0.1, 1, 10, 100],  # Range of regularization strengths. Smaller values, stronger regularization. 0.01 resulted in 'no predicted samples' for precision and would have to initiate the zero_division parameter.
-                }
-        scoring_metrics = ['accuracy', 'precision', 'recall', 'f1', 'roc_auc']
-        grid_search = GridSearchCV(self.log_reg_e, param_grid=param_grid_elas, scoring=scoring_metrics, refit='accuracy', cv=5) 
-        grid_search.fit(self.X_train_ft, self.y_train) 
-        best_params = grid_search.best_params_
-        print("\n Best parameters found: ", best_params)
-        print("\n Best score found: ", grid_search.best_score_)
+        if model == 'log_reg':
+            self.param_grid_elas = {
+                'l1_ratio': [0.1, 0.3, 0.5, 0.7, 0.9, 1.0],  # Range of l1_ratio values to search
+                'C': [0.01, 0.1, 1, 10, 100],  # Range of regularization strengths. Smaller values, stronger regularization. 0.01 resulted in 'no predicted samples' for precision and would have to initiate the zero_division parameter.
+                    }
+            self.scoring_metrics_log = ['accuracy', 'precision', 'recall', 'f1', 'roc_auc']
+            self.grid_search_log = GridSearchCV(self.log_reg_e, param_grid=self.param_grid_elas, scoring=self.scoring_metrics_log, refit='accuracy', cv=5) 
+            self.grid_search_log.fit(self.X_train_ft, self.y_train) 
+            self.best_params_log = self.grid_search_log.best_params_
+            print("\n Best parameters found [log_reg_e]: ", self.best_params_log)
+            print("\n Best score found [log_reg_e]: ", self.grid_search_log.best_score_) #FIXME: What is the name of this score?
 
-        # Refit the logistic regression model on X_train_ft using balanced classes and best params.
-        self.log_reg_e_ft = LogisticRegression(class_weight=class_weight_dict, **best_params).fit(self.X_train_ft, self.y_train)
-        print('\n Class weight', class_weight_dict)
+            # Refit the logistic regression model on X_train_ft using balanced classes and best params.
+            self.log_reg_e_ft = LogisticRegression(class_weight=self.class_weight_dict, **self.best_params_log).fit(self.X_train_ft, self.y_train)
+            
+            print('\n Class weight', self.class_weight_dict)
 
-        # Predictions
-        self.y_pred_ft = self.log_reg_e_ft.predict(self.X_val_ft)
-        self.y_proba_ft = self.log_reg_e_ft.predict_proba(self.X_val_ft)
+            self.y_pred_ft = self.log_reg_e_ft.predict(self.X_val_ft)
+            self.y_proba_ft = self.log_reg_e_ft.predict_proba(self.X_val_ft)
 
-        return self.y_train, self.X_train_ft, self.X_val_ft, self.log_reg_e, self.log_reg_e_ft, self.y_proba_ft, self.y_pred_ft
+            print("\n model = log_reg")
 
-    def Feature_Importance(self, df):
+        if model == 'rf':
+
+            self.param_grid_rf = {
+                'n_estimators': [50, 100, 150, 200],
+            }
+            self.scoring_metrics_rf = ['accuracy', 'precision', 'recall', 'f1', 'roc_auc']
+            self.grid_search_rf = GridSearchCV(self.random_forest, param_grid=self.param_grid_rf, scoring=self.scoring_metrics_rf, refit='accuracy', cv=5) 
+            self.grid_search_rf.fit(self.X_train_ft, self.y_train)
+            self.best_params_rf = self.grid_search_rf.best_params_
+            print("\n Best parameters found [rf]: ", self.best_params_rf)
+            print("\n Best score found [rf]: ", self.grid_search_rf.best_score_) #FIXME: What is the name of this score?
+
+            self.random_forest_ft = RandomForestClassifier(**self.best_params_rf).fit(self.X_train_ft, self.y_train)
+
+            self.y_pred_ft = self.random_forest_ft.predict(self.X_val_ft)
+            self.y_proba_ft = self.random_forest_ft.predict_proba(self.X_val_ft)
+
+            print("\n model = rf")
+
+        return self.y_train, self.X_train_ft, self.X_val_ft, self.log_reg_e, self.log_reg_e_ft, self.y_proba_ft, self.y_pred_ft, self.random_forest, self.random_forest_ft
+
+    def Feature_Importance(self, df, model):
 
         """ 
         Fucntion to:
@@ -148,50 +188,70 @@ class DataProcessing:
 
         """
 
-        feature_importance = pd.Series(self.log_reg_e_ft.coef_.flatten(), index=self.selected_features)
-        feature_importance = feature_importance.round(3)
+        #FIXME: /root/.venv/lib/python3.10/site-packages/sklearn/linear_model/_sag.py:349: ConvergenceWarning: The max_iter was reached which means the coef_ did not converge warnings.warn. 
 
-        coef = self.log_reg_e_ft.coef_.flatten()
-        coef = np.sort(coef, axis=None)[::-1] # to sort df by coef
-        coef = np.round(coef, 3)
+        if model == 'log_reg':
+            self.feature_importance_log = pd.Series(self.log_reg_e_ft.coef_.flatten(), index=self.selected_features)
+            self.feature_importance_log = self.feature_importance_log.round(3)
 
-        # Calculate standard errors
-        se = np.sqrt(np.diag(np.linalg.inv(np.dot(self.X_train_ft.T, self.X_train_ft))))
+            self.coef = self.log_reg_e_ft.coef_.flatten()
+            self.coef = np.sort(self.coef, axis=None)[::-1] # to sort df by coef
+            self.coef = np.round(self.coef, 3)
 
-        # Calculate CIs for coefficients
-        z = 1.96  # for 95% confidence interval
-        ci_lower = coef - z * se
-        ci_upper = coef + z * se
+            # Calculate standard errors
+            self.se = np.sqrt(np.diag(np.linalg.inv(np.dot(self.X_train_ft.T, self.X_train_ft))))
 
-        # Convert coefficients to CIs
-        ci_lower_or = np.exp(ci_lower)
-        ci_upper_or = np.exp(ci_upper)
-        odds_ratios = np.exp(coef)
-        odds_ratios = np.round(odds_ratios, 3)
+            # Calculate CIs for coefficients
+            self.z = 1.96  # for 95% confidence interval
+            self.ci_lower = self.coef - self.z * self.se
+            self.ci_upper = self.coef + self.z * self.se
 
-        # Create a DataFrame of features, coefficients, and odds ratios
-        self.feature_importance_df = pd.DataFrame({
-            'Feature': feature_importance.index,
-            'Importance': feature_importance.values,
-            'Coefficient': coef.flatten(),
-            'Odds Ratio': odds_ratios.flatten(),
-            'CI Lower': ci_lower_or,
-            'CI Upper': ci_upper_or
-        })
+            # Convert coefficients to CIs
+            self.ci_lower_or = np.exp(self.ci_lower)
+            self.ci_upper_or = np.exp(self.ci_upper)
+            self.odds_ratios = np.exp(self.coef)
+            self.odds_ratios = np.round(self.odds_ratios, 3)
 
-        # ft_impt_file_path = os.path.join(target_folder, f'{model_name}_Feature_Importance_Table_{date_time}.csv')
-        # feature_importance_df.to_csv(ft_impt_file_path, index=False)
-        
-        print('\n', self.feature_importance_df)
+            # Create a DataFrame of features, coefficients, and odds ratios
+            self.feature_importance_log_df = pd.DataFrame({
+                'Feature': self.feature_importance_log.index,
+                'Importance': self.feature_importance_log.values,
+                'Coefficient': self.coef.flatten(),
+                'Odds Ratio': self.odds_ratios.flatten(),
+                'CI Lower': self.ci_lower_or,
+                'CI Upper': self.ci_upper_or
+            })
 
-        return coef, ci_lower_or, ci_upper_or, odds_ratios, feature_importance, self.feature_importance_df
+            print('\n', self.feature_importance_log_df)
+            return self.coef, self.ci_lower_or, self.ci_upper_or, self.odds_ratios,  self.feature_importance_log_df, self.feature_importance_log
+
+
+        if model == 'rf':
+            self.feature_importance_rf = self.random_forest_ft.feature_importances_
+            self.feature_importance_rf = self.feature_importance_rf.round(3)
+
+            #RF doesn't return coef_ like linear models do. instead they provide feature importances
+            self.feature_importance_rf_df = pd.DataFrame({
+                'Feature': self.selected_features,
+                'Importance': self.feature_importance_rf
+            }) 
+            
+            print('\n', self.feature_importance_rf_df)
+
+            # ft_impt_file_path = os.path.join(target_folder, f'{model_name}_Feature_Importance_Table_{date_time}.csv')
+            # feature_importance_df.to_csv(ft_impt_file_path, index=False)
+            
+            return self.feature_importance_rf_df, self.feature_importance_rf
 
 if __name__ == "__main__":
-    df_file_path = input("Provide df file path: ")
+    # df_file_path = input("Provide df file path: ")
+    df_file_path = '/root/ctgan/synthetic_data/survaya_03062022_clean_n_output_model_CTGAN_3735_samples.csv'
     df = pd.read_csv(df_file_path, delimiter=',', encoding='latin1')
 
+    model = "log_reg" #model options: log_reg, rf
+
     post_process_data = DataProcessing(df)
-    post_process_data.Create_Model(df)
-    post_process_data.Feature_Selection(df)
-    post_process_data.Parameter_Tuning(df)
-    post_process_data.Feature_Importance(df)
+    post_process_data.Create_Model(df, model=model)
+    post_process_data.Feature_Selection(df, model=model)
+    post_process_data.Parameter_Tuning(df, model=model)
+    post_process_data.Feature_Importance(df, model=model)
