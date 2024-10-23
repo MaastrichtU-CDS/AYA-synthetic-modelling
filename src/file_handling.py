@@ -70,9 +70,7 @@ class FileSave:
 
 
 if __name__ == "__main__":
-    # df_file_path = input("Provide df file path: ")
-    
-    df_file_path = "/root/ctgan/synthetic_data/survaya_03062022_clean_n_output_model_CTGAN_3735_samples.csv"
+    df_file_path = input("Provide df file path: ")
     df = pd.read_csv(df_file_path, delimiter=',', encoding='latin1')
 
     save_to_file = FileSave(df)
