@@ -158,8 +158,7 @@ class DataPreProcessing:
         return self.X_train, self.X_test, self.X_val, self.y_train, self.y_test, self.y_val 
 
 if __name__ == "__main__":
-    # df_file_path = input("Provide df file path: ")
-    df_file_path = "/root/ctgan/synthetic_data/survaya_03062022_clean_n_output_model_CTGAN_3735_samples.csv"
+    df_file_path = input("Provide df file path: ")
     df = pd.read_csv(df_file_path, delimiter=',', encoding='latin1')
     
     pre_process_data = DataPreProcessing(df)
