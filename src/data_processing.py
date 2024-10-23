@@ -188,8 +188,6 @@ class DataProcessing:
 
         """
 
-        #FIXME: /root/.venv/lib/python3.10/site-packages/sklearn/linear_model/_sag.py:349: ConvergenceWarning: The max_iter was reached which means the coef_ did not converge warnings.warn. 
-
         if model == 'log_reg':
             self.feature_importance_log = pd.Series(self.log_reg_e_ft.coef_.flatten(), index=self.selected_features)
             self.feature_importance_log = self.feature_importance_log.round(3)
@@ -248,7 +246,7 @@ if __name__ == "__main__":
     df_file_path = '/root/ctgan/synthetic_data/survaya_03062022_clean_n_output_model_CTGAN_3735_samples.csv'
     df = pd.read_csv(df_file_path, delimiter=',', encoding='latin1')
 
-    model = "log_reg" #model options: log_reg, rf
+    model = "rf" #model options: log_reg, rf
 
     post_process_data = DataProcessing(df)
     post_process_data.Create_Model(df, model=model)

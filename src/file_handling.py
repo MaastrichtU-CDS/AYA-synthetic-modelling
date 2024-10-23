@@ -23,9 +23,10 @@ from reportlab.lib.styles import getSampleStyleSheet
 
 
 class FileSave:
-    def __init__(self, df: pd.DataFrame, df_file_path: str):
+    def __init__(self, df: pd.DataFrame):
         self.df = df.copy()
 
+    def Create_Save_Folder(self, df_file_path):
         now = datetime.now()
         self.date_time = now.strftime("%d-%m_%H-%M")
         self.date = now.strftime("%d-%m")
@@ -39,21 +40,20 @@ class FileSave:
         self.results_folder = '/results'
         self.save_folder = os.path.join(self.root_folder, self.model_folder, self.results_folder, f"{self.date}_Outputs") # root > ctgan > results
         print(self.save_folder)
+    
+    def Save_Evals(self):
+        self.evaluations = EvaluateModel(self.df)
+        self.Conf_Mat = self.evaluations.Make_Conf()
+        conf_mat_path = os.path.join(self.save_folder, 'confusion_matrix_plot.pdf')
+        self.Confusion_Matrix_Plot = self.evaluations.Confusion_Matrix_Plot
 
+        plt.savefig(conf_mat_path, format='pdf')
 
-        # self.evaluations = EvaluateModel(self.df)
-        # self.Conf_Mat = self.evaluations.Make_Conf()
-        
-        # plt.savefig(self.save_folder, self.Conf_Mat, format='pdf') # Save the figure to a file in src folder
-        
+        #Confusion_Matrix_Plot
         # self.file_path = os.path.join(self.save_folder, Conf_Mat, 'confusion_matrix.pdf')
 
         # # Generate the confusion matrix plot
-        # self.Confusion_Matrix_Plot = self.evaluations.Confusion_Matrix_Plot()
 
-        # # Save to a file on disk
-        # with open(self.file_path, 'wb') as f:
-        #     f.write(self.Confusion_Matrix_Plot.getbuffer())
 
         
         
@@ -75,7 +75,9 @@ if __name__ == "__main__":
     df_file_path = "/root/ctgan/synthetic_data/survaya_03062022_clean_n_output_model_CTGAN_3735_samples.csv"
     df = pd.read_csv(df_file_path, delimiter=',', encoding='latin1')
 
-    save_to_file = FileSave(df, df_file_path)
+    save_to_file = FileSave(df)
+    save_to_file.Create_Save_Folder(df_file_path)
+    save_to_file.Save_Evals()
 
     # save_to_file.Get_Plots()
 

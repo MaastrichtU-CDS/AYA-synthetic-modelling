@@ -19,7 +19,7 @@ class EvaluateModel:
 
         self.model="rf"
 
-        self.processor = DataProcessing(self.df, model=self.model)
+        self.processor = DataProcessing(self.df)
         self.processor.Create_Model(self.df, model=self.model)
         self.processor.Feature_Selection(self.df, model=self.model)
         self.processor.Parameter_Tuning(self.df, model=self.model)
@@ -129,7 +129,6 @@ class EvaluateModel:
         plt.show()
 
         return self.OR_CI_Plot
-
 
 
     def Make_Metrics(self):
