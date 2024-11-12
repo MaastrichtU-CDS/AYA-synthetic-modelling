@@ -45,15 +45,15 @@ class FileSave:
         
         if self.algorithm == 'log_reg':
             self.feature_importance_log_df = self.processor.feature_importance_log_df
-            self.best_params_log = self.processor.best_params_log
+            self.best_estimator_log = self.processor.best_estimator_log
         
         if self.algorithm == 'rf':
             self.feature_importance_rf_df = self.processor.feature_importance_rf_df
-            self.best_params_rf = self.processor.best_params_rf
+            self.best_estimator_rf = self.processor.best_estimator_rf
         
         if self.algorithm == 'mlp':
             self.feature_importance_mlp_df = self.processor.feature_importance_mlp_df
-            # self.best_params_mlp = self.processor.best_params_mlp
+            self.best_estimator_mlp = self.processor.best_estimator_mlp
 
         self.evaluator = EvaluateModel(self.df, self.algorithm)
         self.evaluator.Make_Metrics()
@@ -220,7 +220,7 @@ class FileSave:
             'F1 Score': self.metrics_ft["F1 Score"],
             'Log Loss': self.metrics_ft["Log Loss"],
             'ROC AUC Score': self.metrics_ft["ROC AUC Score"],
-            'Best Parameters': self.best_params_log if self.algorithm == 'log_reg' else 'n/a' if self.algorithm == 'mlp' else self.best_params_rf
+            'Best Estimators': self.best_estimator_log if self.algorithm == 'log_reg' else self.best_estimator_mlp if self.algorithm == 'mlp' else self.best_estimator_rf
         }
 
         # Swap columns and rows in the table

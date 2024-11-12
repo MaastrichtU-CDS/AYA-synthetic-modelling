@@ -45,14 +45,16 @@ class DataProcessing:
         self.log_reg_e = None
         self.log_reg_e_ft = None
         self.feature_importance_log_df = None
-        self.best_params_log = None
+        self.best_estimator_log = None
         self.model_log_features = None 
+        self.best_params_log = None
 
 
         self.random_forest = None
         self.random_forest_ft = None
         self.feature_importance_rf_df = None
         self.model_rf_features = None
+        self.best_estimator_rf = None
         self.best_params_rf = None
 
 
@@ -60,6 +62,8 @@ class DataProcessing:
         self.mlp_ft = None
         self.feature_importance_mlp_df = None
         self.model_mlp_features = None
+        self.best_estimator_mlp = None
+        self.best_params_mlp = None
 
         self.selected_features_mask = None 
 
@@ -166,7 +170,7 @@ class DataProcessing:
             self.X_val_ft = pd.DataFrame(self.model_log_features.transform(self.X_val), columns=self.selected_features)
 
         if self.algorithm=="rf":
-            self.result_rf = permutation_importance(self.random_forest, self.X_train, self.y_train, n_repeats=10, random_state=42, scoring='accuracy')
+            self.result_rf = permutation_importance(self.random_forest, self.X_train, self.y_train, random_state=42, scoring='accuracy') #FIXME: can include n_repeats=10
             self.importance_scores_rf = self.result_rf.importances_mean
             self.threshold_rf = sorted(self.importance_scores_rf, reverse=True)[int(len(self.importance_scores_rf) * 0.2)]  # Select top 20% features
             self.selected_features_mask = self.importance_scores_rf >= self.threshold_rf
@@ -175,7 +179,7 @@ class DataProcessing:
             self.X_val_ft = pd.DataFrame(self.X_val.loc[:, self.selected_features])
 
         if self.algorithm=="mlp":
-            self.result_mlp = permutation_importance(self.mlp, self.X_train, self.y_train, random_state=42, scoring='accuracy')
+            self.result_mlp = permutation_importance(self.mlp, self.X_train, self.y_train, random_state=42, scoring='accuracy') #FIXME: can include n_repeats=10
             self.importance_scores_mlp = self.result_mlp.importances_mean
             self.threshold_mlp = sorted(self.importance_scores_mlp, reverse=True)[int(len(self.importance_scores_mlp) * 0.2)]  # Select top 20% features
             self.selected_features_mask = self.importance_scores_mlp >= self.threshold_mlp
@@ -226,54 +230,85 @@ class DataProcessing:
                 'C': [0.01, 0.1, 1, 10, 100],  # Range of regularization strengths. Smaller values, stronger regularization. 0.01 resulted in 'no predicted samples' for precision and would have to initiate the zero_division parameter.
                     }
             self.scoring_metrics_log = ['accuracy', 'precision', 'recall', 'f1', 'roc_auc']
-            self.grid_search_log = GridSearchCV(self.log_reg_e, param_grid=self.param_grid_elas, scoring=self.scoring_metrics_log, refit='accuracy', cv=5) 
+            self.scoring_metrics_log_dict = {metric: metric for metric in self.scoring_metrics_log} # Dictionary to use all metrics in GridSearchCV
+            self.grid_search_log = GridSearchCV(
+                estimator=self.log_reg_e, 
+                param_grid=self.param_grid_elas, 
+                scoring=self.scoring_metrics_log_dict,  
+                refit='accuracy', 
+                cv=5, 
+                verbose=1) # cv = cross-validation = n folds
             self.grid_search_log.fit(self.X_train_ft, self.y_train) 
-            self.best_params_log = self.grid_search_log.best_params_
-            print("\n Best parameters found [log_reg_e]: ", self.best_params_log)
-
+            self.best_params_log = self.grid_search_log.best_params_ # Best hyperparameters found from param_grid
+            self.best_estimator_log = self.grid_search_log.best_estimator_ # Best (overall) estimator found from grid search
+            print("\n Best estimator found [log_reg_e]: ", self.best_estimator_log)
+            print("\n Best score found based on refit method [log_reg_e]: ", self.grid_search_log.best_score_)
+        
             # Refit on X_train_ft using best params
-            self.log_reg_e_ft = LogisticRegression(**self.best_params_log).fit(self.X_train_ft, self.y_train)
+            self.log_reg_e_ft = LogisticRegression(penalty='elasticnet', solver='saga', random_state=42, **self.best_params_log, verbose=True).fit(self.X_train_ft, self.y_train)
             print("\n Done fitting log_reg with best params")
 
             self.y_pred_ft = self.log_reg_e_ft.predict(self.X_val_ft)
             self.y_proba_ft = self.log_reg_e_ft.predict_proba(self.X_val_ft)
 
-            return self.log_reg_e, self.log_reg_e_ft, self.best_params_log, self.y_train, self.X_train_ft, self.X_val_ft, self.y_proba_ft, self.y_pred_ft
+            return self.log_reg_e, self.log_reg_e_ft, self.best_estimator_log, self.y_train, self.X_train_ft, self.X_val_ft, self.y_proba_ft, self.y_pred_ft
+
+
+
 
         if self.algorithm == 'rf':
 
             self.param_grid_rf = {
-                'n_estimators': [50, 100, 150, 200],
+                'n_estimators': [50, 100, 150, 200]
             }
             self.scoring_metrics_rf = ['accuracy', 'precision', 'recall', 'f1', 'roc_auc']
-            self.grid_search_rf = GridSearchCV(self.random_forest, param_grid=self.param_grid_rf, scoring=self.scoring_metrics_rf, refit='accuracy', cv=5) 
+            self.scoring_metrics_rf_dict = {metric: metric for metric in self.scoring_metrics_rf} # Dictionary to use all metrics in GridSearchCV
+            self.grid_search_rf = GridSearchCV(
+                estimator=self.random_forest, 
+                param_grid=self.param_grid_rf, 
+                scoring=self.scoring_metrics_rf_dict, 
+                refit='accuracy', 
+                cv=5) 
             self.grid_search_rf.fit(self.X_train_ft, self.y_train)
+            self.best_estimator_rf = self.grid_search_rf.best_estimator_
             self.best_params_rf = self.grid_search_rf.best_params_
-            print("\n Best parameters found [rf]: ", self.best_params_rf)
+
+            print("\n Best estimator found [rf]: ", self.best_estimator_rf)
+            print("\n Best score found based on refit method [rf]: ", self.grid_search_rf.best_score_)
 
             # Refit on X_train_ft using best params
-            self.random_forest_ft = RandomForestClassifier(**self.best_params_rf).fit(self.X_train_ft, self.y_train)
+            self.random_forest_ft = RandomForestClassifier(**self.best_params_rf, verbose = True).fit(self.X_train_ft, self.y_train)
             print("\n Done fitting rf with best params")
             
             self.y_pred_ft = self.random_forest_ft.predict(self.X_val_ft)
             self.y_proba_ft = self.random_forest_ft.predict_proba(self.X_val_ft)
 
-            return self.random_forest, self.random_forest_ft, self.best_params_rf, self.y_train, self.X_train_ft, self.X_val_ft, self.y_proba_ft, self.y_pred_ft
+            return self.random_forest, self.random_forest_ft, self.best_estimator_rf, self.y_train, self.X_train_ft, self.X_val_ft, self.y_proba_ft, self.y_pred_ft
+
+
+
 
         if self.algorithm == 'mlp':
-            # self.param_grid_mlp = {
-            #     'hidden_layer_sizes': [(50, 50), (100, 100), (200, 200)],
-            # #     'activation': ['logistic', 'tanh', 'relu'],
-            #     'alpha': [0.0001, 0.001, 0.01, 0.1]
-            # }
+            self.param_grid_mlp = {
+                'hidden_layer_sizes': [(50,), (100, ), (200, )],
+                'alpha': [0.0001, 0.001, 0.01, 0.1]
+            }
 
-            # self.scoring_metrics_mlp = ['accuracy', 'precision', 'recall', 'f1', 'roc_auc']
-            # self.grid_search_mlp = GridSearchCV(self.mlp, param_grid=self.param_grid_mlp, scoring=self.scoring_metrics_mlp, refit='accuracy', cv=5)
-            # self.grid_search_mlp.fit(self.X_train_ft, self.y_train)
-            # self.best_params_mlp = self.grid_search_mlp.best_params_
-            # print("\n Best parameters found [mlp]: ", self.best_params_mlp)
+            self.scoring_metrics_mlp = ['accuracy', 'precision', 'recall', 'f1', 'roc_auc']
+            self.scoring_metrics_mlp_dict = {metric: metric for metric in self.scoring_metrics_mlp}
+            self.grid_search_mlp = GridSearchCV(
+                estimator=self.mlp, 
+                param_grid=self.param_grid_mlp,
+                  scoring=self.scoring_metrics_mlp_dict, 
+                  refit='accuracy', 
+                  cv=5)
+            self.grid_search_mlp.fit(self.X_train_ft, self.y_train)
+            self.best_params_mlp = self.grid_search_mlp.best_params_
+            self.best_estimator_mlp = self.grid_search_mlp.best_estimator_
+            print("\n Best parameters found [mlp]: ", self.best_params_mlp)
+            print("\n Best estimator found [mlp]: ", self.best_estimator_mlp)
             
-            self.mlp_ft = MLPClassifier(verbose = True, shuffle = True, activation='logistic').fit(self.X_train_ft, self.y_train)
+            self.mlp_ft = MLPClassifier(**self.best_params_mlp, verbose = True, shuffle = True, activation='logistic').fit(self.X_train_ft, self.y_train)
             print("\n Done fitting mlp with best params")
 
             self.y_pred_ft = self.mlp_ft.predict(self.X_val_ft)
@@ -344,6 +379,7 @@ class DataProcessing:
             return self.feature_importance_log_df
 
 
+
         if self.algorithm == 'rf':
             
             print("\n Feature importance for rf: ")
@@ -361,6 +397,8 @@ class DataProcessing:
 
             return self.feature_importance_rf_df
         
+
+
         if self.algorithm == 'mlp':
 
             print("\n Feature importance for mlp: ")
