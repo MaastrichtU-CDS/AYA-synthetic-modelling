@@ -1,6 +1,3 @@
-import logging
-import os 
-
 import pandas as pd
 import numpy as np
 import sklearn
@@ -13,6 +10,7 @@ from sklearn.model_selection import train_test_split
 # Rename columns
 # Encoder
 # Split
+
 
 class DataPreProcessing: 
     def __init__(self, df: pd.DataFrame):
@@ -36,8 +34,14 @@ class DataPreProcessing:
         print(self.df.info())
         print(self.df.describe())
 
-    def Rename_Cols(self, df): #FIXME: Should this be _ first? 
-        #FIXME: Specify return type
+    def Rename_Cols(self, df):
+
+        """
+
+        Function to rename columns of the DataFrame (copy).
+       
+        """
+
         columns_to_rename = { 
             "ql": "Global Health Status",
             "pf": "Physical Functioning",
@@ -46,7 +50,7 @@ class DataPreProcessing:
             "cf": "Cognitive Functioning",
             "rf": "Role Functioning",
             "maladaptive": "Maladaptive Coping Style",
-            "nsurv94dich": "Sexual Attractiveness", # self-perception of own sexual attractiveness
+            "nsurv94dich": "Sexual Attractiveness",
             "Targetnew": "Targeted Therapy",
             "Hormnew": "Hormone Therapy",
             "RTnew": "Radiation Therapy",
@@ -62,8 +66,9 @@ class DataPreProcessing:
         }
 
         self.df = self.df.rename(columns=columns_to_rename)
+        
         print("\n Renamed columns in df: \n")
-        self.df.info() # Call info() directly to print its output
+        self.df.info()
         
         return self.df
 
@@ -71,24 +76,23 @@ class DataPreProcessing:
 
         """
 
-        Function to transform categorical columns using a OneHotEncoder.
+        Function to:
 
-        1. Uses a dictionary (refs) to indicate categorical columns and their reference values to drop using a OneHotEncoder.
-        2. Transforms and refits the model with the encoded data.
+            1. Transform categorical columns using a OneHotEncoder.
+            2. Transform and refit the model with the one-hot-encoded data.
 
-        Global Variables:
-        - refs (dict): A dictionary containing categorical columns and their reference values to drop.
-        - df_encoded (pd.DataFrame): The (new) DataFrame containing the encoded data.
-        
+        Input:
+            - refs (dict): A dictionary containing categorical columns and their reference values to drop.
+                
         Returns:
-        - df_encoded (pd.DataFrame): The DataFrame with categorical columns encoded and other columns unchanged.
-    
-        # Binary features are not encoded.
+            - df_encoded (pd.DataFrame): The new DataFrame with categorical columns encoded and other columns unchanged.
+        
+        Binary features are not encoded.
 
         """
 
         refs = {
-            "Education Level": 3.0, #FIXME: Given data, no 2.0.
+            "Education Level": 3.0,
             "Tumour Type": 1.0,
             "Tumour Stage": 1.0,
             "Time Since Diagnosis": 3.0,
@@ -134,21 +138,21 @@ class DataPreProcessing:
 
 
     def Ttv_Split(self) -> pd.DataFrame:
+        
         """
-
-        #TODO: Maybe we will select different training and test sizes so set up for that. 
 
         Train Test Val (Ttv) Split Function
         
-        1. Split the Data into training, validation, and test sets. 
-            Split:, 80% training, 20% validation, and 10% test.
-        2. Put data into dataframe type.
+            - Split the Data into training, validation, and test sets. 
+                Current split:, 80% training, 20% validation, and 10% test.
+        
+        Returns the split data as dataframes.
 
         """
+
         train_split_size = 0.8
         test_split_size = 0.1
         val_split_size = 0.2
-        # TODO: maybe vars of percentages to multiply for test and val sets.
 
         self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(self.X, self.y, test_size=test_split_size, random_state=42)
         self.X_train, self.X_val, self.y_train, self.y_val = train_test_split(self.X_train, self.y_train, test_size=val_split_size, random_state=42)

@@ -11,95 +11,112 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-#TODO: PVALUE, ERROR
+# Confusion matrix
+# Correlation matrix
+# ROC curve
+# OR CI plot
+# Normalized importance
+# Metrics
+
 
 class EvaluateModel:
-    def __init__(self, df: pd.DataFrame):
+    def __init__(self, df: pd.DataFrame, algorithm: str):
         self.df = df.copy()
+        self.algorithm = algorithm
 
-        self.model="rf"
-
-        self.processor = DataProcessing(self.df)
-        self.processor.Create_Model(self.df, model=self.model)
-        self.processor.Feature_Selection(self.df, model=self.model)
-        self.processor.Parameter_Tuning(self.df, model=self.model)
-        self.processor.Feature_Importance(self.df, model=self.model)
+        self.processor = DataProcessing(self.df, self.algorithm)
+        self.processor.Smote_Class_Balance()
+        self.processor.Create_Model()
+        self.processor.Feature_Selection()
+        self.processor.Parameter_Tuning()
+        self.processor.Feature_Importance()
 
         self.y_val = self.processor.y_val
         self.y_pred_ft = self.processor.y_pred_ft
         self.y_proba_ft = self.processor.y_proba_ft
         self.X_train_ft = self.processor.X_train_ft
-        self.feature_importance_df = self.processor.feature_importance_df
 
+        self.feature_importance_log_df = self.processor.feature_importance_log_df
+        self.feature_importance_rf_df = self.processor.feature_importance_rf_df
+        self.feature_importance_mlp_df = self.processor.feature_importance_mlp_df
+        
         self.Confusion_Matrix_Plot = None
         self.Correlation_Plot = None
         self.ROC_Curve_plot = None
         self.OR_CI_Plot = None
+        self.Normalized_Importance_rf_Plot = None
+        self.Normalized_Importance_mlp_Plot = None
+    
+        self.metrics_ft = None
+
 
     def Make_Conf(self):
 
+        """
+
+        Function to create and save confusion matrix plot to object.
+        
+        """
+
         self.conf_matrix = confusion_matrix(self.y_val, self.y_pred_ft)
-        plt.figure(figsize=(10, 10)) 
-        # sns.set(font_scale=1.3)
+
+        self.Confusion_Matrix_Plot, ax = plt.subplots(figsize=(10, 10)) 
+
         sns.heatmap(self.conf_matrix, annot=True, fmt='d', cmap='Blues', cbar=False,
                     xticklabels=['Predicted Negative', 'Predicted Positive'],
                     yticklabels=['Actual Negative', 'Actual Positive'])
-        plt.xlabel('Predicted')
-        plt.ylabel('Actual')
-        plt.title(f'Confusion Matrix', fontsize=13)
-
-        self.Confusion_Matrix_Plot = io.BytesIO()
-        plt.savefig(self.Confusion_Matrix_Plot, format='pdf')
-        self.Confusion_Matrix_Plot.seek(0)
-        
-        
-        # plt.savefig('Confusion_Matrix_Plot.pdf', format='pdf') # Save the figure to a file in src folder
-        # Confusion_Matrix_Plot = os.path.join(target_folder, f'{model_name}_Confusion_Matrix_Plot_{date_time}.pdf')
+        ax.set_xlabel('Predicted', fontsize=14)
+        ax.set_ylabel('Actual', fontsize=14)
+        ax.set_title(f'{self.algorithm} Confusion Matrix', fontsize=16)
 
         plt.show()
 
         return self.Confusion_Matrix_Plot
 
     def Make_Corr(self):
+
+        """
+
+        Function to create and save correlation matrix plot to object 
+            using Spearman correlation to account for non-linear relationships.
+        
+        """
+
         self.correlation_matrix = self.X_train_ft.corr(method="spearman")
-        plt.figure(figsize=(15, 15))
-        plt.xticks(fontsize=14)
-        plt.yticks(fontsize=14)
-        plt.tight_layout()
+
+        self.Correlation_Plot, ax = plt.subplots(figsize=(10, 10))
+        ax.tick_params(axis='x', labelsize=10)
+        ax.tick_params(axis='y', labelsize=10)
+        sns.set_theme(font_scale=0.8)
         sns.heatmap(self.correlation_matrix, annot=True, cmap="RdYlGn", linewidths=.5)
-        plt.title(f"Correlation Matrix Heatmap of Selected Variables", fontsize=25)
-
-        self.Correlation_Plot = io.BytesIO()
-        plt.savefig(self.Correlation_Plot, format='pdf')
-        self.Correlation_Plot.seek(0)
-
-        # plt.savefig(os.path.join(target_folder, f'{model_name}_Correlation_Matrix_Plot_{date_time}.pdf'), format='pdf') # Save the figure to a file
-        # correlation_matrix_plot = os.path.join(target_folder, f'{model_name}_Correlation_Matrix_Plot_{date_time}.pdf')
+        ax.set_title(f'{self.algorithm} Correlation Matrix Heatmap of Selected Variables', fontsize=16)
 
         plt.show()
 
         return self.Correlation_Plot
 
     def Make_ROC(self):
-        self.fpr, self.tpr, _ = roc_curve(self.y_val, self.y_proba_ft[:, 1])
-        self.auc = round(roc_auc_score(self.y_val, self.y_proba_ft[:, 1]), 3)
-        plt.figure(figsize=(15, 15))
-        plt.plot(self.fpr, self.tpr, label=f'AUC = {self.auc:.2f}')
-        plt.plot([0, 1], [0, 1], 'k--')
-        plt.xlabel('False Positive Rate', fontsize=18)
-        plt.ylabel('True Positive Rate', fontsize=18)
-        plt.xticks(fontsize=15)
-        plt.yticks(fontsize=15)
-        # plt.tight_layout()
-        plt.title(f'ROC Curve', fontsize=20)
-        plt.legend(loc='best')
 
-        self.ROC_Curve_plot = io.BytesIO()
-        plt.savefig(self.ROC_Curve_plot, format='pdf')
-        self.ROC_Curve_plot.seek(0)
+        """
+
+        Function to create and save ROC curve plot to object.
         
-        # plt.savefig(os.path.join(target_folder, f'{model_name}_ROC_Curve_Plot_{date_time}.pdf'), format='pdf') # Save the figure to a file
-        # roc_curve_plot = os.path.join(target_folder, f'{model_name}_ROC_Curve_Plot_{date_time}.pdf')
+        """
+
+        self.fpr, self.tpr, _ = roc_curve(self.y_val, self.y_proba_ft[:, 1])
+        self.auc = roc_auc_score(self.y_val, self.y_proba_ft[:, 1])
+
+        self.ROC_Curve_plot, ax = plt.subplots(figsize=(10, 10))
+
+        ax.plot(self.fpr, self.tpr, label=f'AUC = {self.auc:.2f}')
+        ax.plot([0, 1], [0, 1], 'k--')
+        ax.set_xlabel('False Positive Rate', fontsize=14)
+        ax.set_ylabel('True Positive Rate', fontsize=14)
+        ax.tick_params(axis='x', labelsize=10)
+        ax.tick_params(axis='y', labelsize=10)
+
+        ax.set_title(f'{self.algorithm} ROC Curve', fontsize=16)
+        ax.legend(loc='best')
 
         plt.show()
 
@@ -107,54 +124,117 @@ class EvaluateModel:
 
 
     def Make_OR_CI(self):
-        plt.figure(figsize=(10, 10))
-        plt.errorbar(self.feature_importance_df['Odds Ratio'], self.feature_importance_df['Feature'],
-                    xerr=[(self.feature_importance_df['Odds Ratio'] - self.feature_importance_df['CI Lower']).values,
-                          (self.feature_importance_df['CI Upper'] - self.feature_importance_df['Odds Ratio']).values],
+
+        """
+
+        Function to create and save Odds ratio plot with 95% confidence intervals for the selected features.
+        
+        Only for log_reg because rf nor mlp don't have odds ratio.
+        
+        """
+
+        self.OR_CI_Plot, ax = plt.subplots(figsize=(10, 10))
+
+        if self.algorithm == 'log_reg':
+            ax.errorbar(self.feature_importance_log_df['Odds Ratio'], self.feature_importance_log_df['Feature'],
+                    xerr=[(self.feature_importance_log_df['Odds Ratio'] - self.feature_importance_log_df['CI Lower']).values,
+                            (self.feature_importance_log_df['CI Upper'] - self.feature_importance_log_df['Odds Ratio']).values],
                     fmt='o', ecolor='r', capsize=5, capthick=2)
-        plt.axvline(x=1, color='gray', linestyle='--')
-        plt.yticks(rotation=0, fontsize=11)
-        plt.ylabel('Features', fontsize=11)
-        plt.xlabel('Odds Ratio', fontsize=11)
-        plt.title(f'Odds Ratios with 95% Confidence Intervals', fontsize=13)
-        plt.tight_layout()
+       
+            ax.axvline(x=1, color='gray', linestyle='--')
+            ax.tick_params(axis='y', rotation=0, labelsize=11)
+            ax.set_ylabel('Features', fontsize=14)
+            ax.set_xlabel('Odds Ratio', fontsize=14)
+            ax.set_title(f'{self.algorithm} Odds Ratios with 95% Confidence Intervals', fontsize=16)
 
-        # plt.savefig(os.path.join(target_folder, f'{model_name}_OR_CI_Plot_{date_time}.pdf'), format='pdf') # Save the figure to a file
-        # or_ci_plot = os.path.join(target_folder, f'{model_name}_OR_CI_Plot_{date_time}.pdf')
+            plt.show()
 
-        self.OR_CI_Plot = io.BytesIO()
-        plt.savefig(self.OR_CI_Plot, format='pdf')
-        self.OR_CI_Plot.seek(0)
+            return self.OR_CI_Plot
+    
+    def Make_Normalized_Importance(self):
 
-        plt.show()
+        """
 
-        return self.OR_CI_Plot
+        Function to 
+        
+            1. Create and save normalized importance plot.
+            2. Sort the DataFrame by normalized importance for better visualization.
+            3. Plot and return the normalized importances.
+    
+        Only for rf and mlp because no ORs/CIs.
 
+        """
+
+        if self.algorithm == "rf":
+
+            self.Normalized_Importance_rf_Plot, ax = plt.subplots(figsize=(10, 10))
+    
+            # Sort the DataFrame by normalized importance for better visualization
+            self.feature_importance_rf_df = self.feature_importance_rf_df.sort_values(by='Normalized Importance', ascending=False)
+            
+            # Plotting the normalized importances
+            ax.barh(self.feature_importance_rf_df['Feature'], self.feature_importance_rf_df['Normalized Importance'], color='skyblue')
+            
+            ax.set_xlabel('Normalized Importance')
+            ax.set_ylabel('Feature')
+            ax.set_title(f'{self.algorithm} RF Normalized Feature Importances')
+            ax.grid(True)
+            plt.show()
+            
+            return self.Normalized_Importance_rf_Plot
+        
+        if self.algorithm == "mlp":
+
+            self.Normalized_Importance_mlp_Plot, ax = plt.subplots(figsize=(10, 10))
+    
+            # Sort the DataFrame by normalized importance for better visualization
+            self.feature_importance_mlp_df = self.feature_importance_mlp_df.sort_values(by='Normalized Importance', ascending=False)
+            
+            # Plotting the normalized importances
+            ax.barh(self.feature_importance_mlp_df['Feature'], self.feature_importance_mlp_df['Normalized Importance'], color='skyblue')
+            
+            ax.set_xlabel('Normalized Importance')
+            ax.set_ylabel('Feature')
+            ax.set_title(f'{self.algorithm} MLP Normalized Feature Importances')
+            ax.grid(True)
+            plt.show()
+            
+            return self.Normalized_Importance_mlp_Plot
 
     def Make_Metrics(self):
-        metrics_ft = [
-            ['Accuracy Score', round(accuracy_score(self.y_val, self.y_pred_ft), 3)],
-            ['Balanced Accuracy Score', round(balanced_accuracy_score(self.y_val, self.y_pred_ft), 3)],
-            ['Precision Score', round(precision_score(self.y_val, self.y_pred_ft), 3)],
-            ['Recall Score', round(recall_score(self.y_val, self.y_pred_ft), 3)],
-            ['F1 Score', round(f1_score(self.y_val, self.y_pred_ft), 3)],
-            ['Log Loss', round(log_loss(self.y_val, self.y_proba_ft), 3)],
-            ['ROC AUC Score', round(roc_auc_score(self.y_val, self.y_proba_ft[:, 1]), 3)]
-        ]
+        
+        """
 
-        for metric, value in metrics_ft:
+        Function to save other evaluation metrics to object: metrics_ft. 
+        
+        'ft' indicates that the object accounts for selected features.
+        
+        """
+
+        self.metrics_ft = {
+            'Accuracy Score': round(accuracy_score(self.y_val, self.y_pred_ft), 3),
+            'Balanced Accuracy Score': round(balanced_accuracy_score(self.y_val, self.y_pred_ft), 3),
+            'Precision Score': round(precision_score(self.y_val, self.y_pred_ft), 3),
+            'Recall Score': round(recall_score(self.y_val, self.y_pred_ft), 3),
+            'F1 Score': round(f1_score(self.y_val, self.y_pred_ft), 3),
+            'Log Loss': round(log_loss(self.y_val, self.y_proba_ft), 3),
+            'ROC AUC Score': round(roc_auc_score(self.y_val, self.y_proba_ft[:, 1]), 3)
+        }
+
+        for metric, value in self.metrics_ft.items():
             print(f'{metric}: {value}')
+
+        return self.metrics_ft
 
 
 if __name__ == "__main__":
     df_file_path = input("Provide df file path: ")
     df = pd.read_csv(df_file_path, delimiter=',', encoding='latin1')
-
-    # model = "rf"
     
-    evaluate_data = EvaluateModel(df)    
+    evaluate_data = EvaluateModel(df, algorithm= input("Choose algorithm: log_reg, rf, mlp: "))    
     evaluate_data.Make_Conf()
     evaluate_data.Make_Corr()
-    # evaluate_data.Make_ROC()
-    # evaluate_data.Make_OR_CI() #FIXME: Recheck code
+    evaluate_data.Make_ROC()
+    evaluate_data.Make_OR_CI()
+    evaluate_data.Make_Normalized_Importance()
     evaluate_data.Make_Metrics()
