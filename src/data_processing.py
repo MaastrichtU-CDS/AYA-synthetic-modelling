@@ -1,4 +1,3 @@
-import logging
 import os 
 
 from data_pre_processing import DataPreProcessing
@@ -32,7 +31,6 @@ class DataProcessing:
         self.pre_processor.Data_Exploration()
         self.pre_processor.Rename_Cols(self.df)
         self.pre_processor.Cat_Encoder(self.df)
-
         self.X_train_OG, self.X_test, self.X_val, self.y_train, self.y_test, self.y_val, = self.pre_processor.Ttv_Split()
         
         self.X_train = None
@@ -73,7 +71,7 @@ class DataProcessing:
         self.class_weight_OG = None
         self.class_weight_smote = None
 
-    def Smote_Class_Balance(self):
+    def Smote_Class_Balance(self) -> pd.DataFrame:
 
         '''
 
@@ -95,6 +93,8 @@ class DataProcessing:
 
         print (f'\n Original training data size: {self.orig_train_size}, Post-SMOTE training data size: {self.post_smote_train_size}')
         print (f'\n Class weights before SMOTE: {self.class_weight_OG}, Class weights after SMOTE: {self.class_weight_smote}')
+    
+        return self.X_train, self.y_train
 
     def Create_Model(self):
 
@@ -219,6 +219,7 @@ class DataProcessing:
             mlp_ft: The refitted MLP model on the selected features.
 
             best_params: The best hyperparameters found for each model.
+            best_estimator: The best estimator found for each model.
             y_proba_ft: The predicted probabilities on the validation data.
             y_pred_ft: The predicted labels on the validation data.
 
@@ -230,17 +231,17 @@ class DataProcessing:
                 'C': [0.01, 0.1, 1, 10, 100],  # Range of regularization strengths. Smaller values, stronger regularization. 0.01 resulted in 'no predicted samples' for precision and would have to initiate the zero_division parameter.
                     }
             self.scoring_metrics_log = ['accuracy', 'precision', 'recall', 'f1', 'roc_auc']
-            self.scoring_metrics_log_dict = {metric: metric for metric in self.scoring_metrics_log} # Dictionary to use all metrics in GridSearchCV
+            self.scoring_metrics_log_dict = {metric: metric for metric in self.scoring_metrics_log}
             self.grid_search_log = GridSearchCV(
                 estimator=self.log_reg_e, 
                 param_grid=self.param_grid_elas, 
                 scoring=self.scoring_metrics_log_dict,  
                 refit='accuracy', 
                 cv=5, 
-                verbose=1) # cv = cross-validation = n folds
+                verbose=True) # cv = cross-validation = n folds
             self.grid_search_log.fit(self.X_train_ft, self.y_train) 
-            self.best_params_log = self.grid_search_log.best_params_ # Best hyperparameters found from param_grid
-            self.best_estimator_log = self.grid_search_log.best_estimator_ # Best (overall) estimator found from grid search
+            self.best_params_log = self.grid_search_log.best_params_ 
+            self.best_estimator_log = self.grid_search_log.best_estimator_ 
             print("\n Best estimator found [log_reg_e]: ", self.best_estimator_log)
             print("\n Best score found based on refit method [log_reg_e]: ", self.grid_search_log.best_score_)
         
@@ -259,16 +260,17 @@ class DataProcessing:
         if self.algorithm == 'rf':
 
             self.param_grid_rf = {
-                'n_estimators': [50, 100, 150, 200]
-            }
+                'n_estimators': [10, 50, 100, 150, 200],
+                }
             self.scoring_metrics_rf = ['accuracy', 'precision', 'recall', 'f1', 'roc_auc']
-            self.scoring_metrics_rf_dict = {metric: metric for metric in self.scoring_metrics_rf} # Dictionary to use all metrics in GridSearchCV
+            self.scoring_metrics_rf_dict = {metric: metric for metric in self.scoring_metrics_rf}
             self.grid_search_rf = GridSearchCV(
                 estimator=self.random_forest, 
                 param_grid=self.param_grid_rf, 
                 scoring=self.scoring_metrics_rf_dict, 
                 refit='accuracy', 
-                cv=5) 
+                cv=5,
+                verbose=True) 
             self.grid_search_rf.fit(self.X_train_ft, self.y_train)
             self.best_estimator_rf = self.grid_search_rf.best_estimator_
             self.best_params_rf = self.grid_search_rf.best_params_
@@ -277,7 +279,9 @@ class DataProcessing:
             print("\n Best score found based on refit method [rf]: ", self.grid_search_rf.best_score_)
 
             # Refit on X_train_ft using best params
-            self.random_forest_ft = RandomForestClassifier(**self.best_params_rf, verbose = True).fit(self.X_train_ft, self.y_train)
+            self.random_forest_ft = RandomForestClassifier(**self.best_params_rf, verbose = True, random_state=42).fit(self.X_train_ft, self.y_train)
+            # 'criterion': ['gini', 'entropy'] # The function to measure the quality of a split. Supported criteria are “gini” for the Gini impurity and “entropy” for the information gain. (gini = default)
+
             print("\n Done fitting rf with best params")
             
             self.y_pred_ft = self.random_forest_ft.predict(self.X_val_ft)
@@ -317,7 +321,7 @@ class DataProcessing:
             return self.mlp, self.mlp_ft, self.y_train, self.X_train_ft, self.X_val_ft, self.y_pred_ft, self.y_proba_ft
 
 
-    def Feature_Importance(self):
+    def Feature_Importance(self)-> pd.DataFrame:
 
         """ 
 
@@ -345,7 +349,7 @@ class DataProcessing:
             self.feature_importance_log = pd.Series(self.log_reg_e_ft.coef_.flatten(), index=self.selected_features)
 
             self.coef = self.log_reg_e_ft.coef_.flatten()
-            self.coef = np.sort(self.coef, axis=None)[::-1] # to sort df by coef
+            # self.coef = np.sort(self.coef, axis=None)[::-1]
 
             # Calculate standard errors
             self.se = np.sqrt(np.diag(np.linalg.inv(np.dot(self.X_train_ft.T, self.X_train_ft))))
@@ -361,6 +365,7 @@ class DataProcessing:
             self.odds_ratios = np.exp(self.coef)
 
             self.p_values = 2 * (1 - stats.norm.cdf(np.abs(self.coef / self.se)))  # two-tailed test
+            self.p_values = np.round(self.p_values, 3)
             
             # Create a DataFrame of features, coefficients, odds ratios, p-values, and CIs
             self.feature_importance_log_df = pd.DataFrame({
@@ -372,7 +377,7 @@ class DataProcessing:
                 'CI Upper': self.ci_upper_or.round(3),
                 'Standard Error': self.se.flatten().round(3),
                 'P Value': self.p_values.flatten()
-            })
+            }).sort_values(by='Importance', ascending=False)
 
             print('\n', self.feature_importance_log_df)
 
@@ -381,17 +386,17 @@ class DataProcessing:
 
 
         if self.algorithm == 'rf':
+            #RF doesn't return coef_ like linear models do. instead they provide feature importances
             
             print("\n Feature importance for rf: ")
             self.feature_importance_rf = self.random_forest_ft.feature_importances_
             self.normalized_importance_rf = self.feature_importance_rf / np.sum(self.feature_importance_rf)
 
-            #RF doesn't return coef_ like linear models do. instead they provide feature importances
             self.feature_importance_rf_df = pd.DataFrame({
                 'Feature': self.selected_features,
                 'Importance': self.feature_importance_rf.round(3),
                 'Normalized Importance': self.normalized_importance_rf.round(3)
-            }) 
+            }).sort_values(by='Importance', ascending=False)
             
             print('\n', self.feature_importance_rf_df)
 

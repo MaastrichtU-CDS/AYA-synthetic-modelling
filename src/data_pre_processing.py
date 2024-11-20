@@ -34,7 +34,7 @@ class DataPreProcessing:
         print(self.df.info())
         print(self.df.describe())
 
-    def Rename_Cols(self, df):
+    def Rename_Cols(self, df:pd.DataFrame):
 
         """
 
@@ -72,7 +72,7 @@ class DataPreProcessing:
         
         return self.df
 
-    def Cat_Encoder(self, df):
+    def Cat_Encoder(self, df:pd.DataFrame)-> pd.DataFrame:
 
         """
 
@@ -97,6 +97,13 @@ class DataPreProcessing:
             "Tumour Stage": 1.0,
             "Time Since Diagnosis": 3.0,
             "BMI Group": 1.0,
+            "Sexual Attractiveness": 0.0,
+            "Partner": 1.0,
+            "Biological Sex": 0.0,
+            "Targeted Therapy": 0.0,
+            "Hormone Therapy": 0.0,
+            "Radiation Therapy": 0.0,
+            "Chemotherapy": 0.0
         }
 
         # Extract categorical columns and their reference values to drop
@@ -105,7 +112,7 @@ class DataPreProcessing:
         print("DROP SPECS:", refs_to_drop)
         
         # Create a OneHotEncoder with drop specifications
-        ohe = OneHotEncoder(drop='first', sparse_output=False, handle_unknown='ignore')
+        ohe = OneHotEncoder(drop =refs_to_drop, sparse_output=False, handle_unknown='ignore')
 
         # Apply the encoder to the specified categorical columns
         cat_col_transformer = ColumnTransformer(
@@ -126,6 +133,36 @@ class DataPreProcessing:
         print("\n Encoded df: \n")
         self.df.info()
 
+
+        # Rename encoded columns for better readability
+        encoded_cols = {
+            "Education Level_0.0": "No/Primary Education_1.0",
+            "Education Level_1.0": "Secondary Education_2.0",
+            "Tumour Type_2.0": "Head/Neck Tumour_2.0",
+            "Tumour Type_3.0": "Digestive Tumour_3.0",
+            "Tumour Type_4.0": "Colon and Rectal Tumour_4.0",
+            "Tumour Type_5.0": "Bone and STS Tumour_5.0",
+            "Tumour Type_6.0": "Other Tumour_6.0",
+            "Tumour Type_7.0": "Germ Cell Tumour_7.0",
+            "Tumour Type_8.0": "Breast Tumour_8.0",
+            "Tumour Type_9.0": "Female Genitalia Tumour_9.0",
+            "Tumour Type_10.0": "Lymph Tumour_10.0",
+            "Tumour Type_11.0": "Myeloid Tumour_11.0",
+            "Tumour Type_12.0": "Thyroid Gland Tumour_12.0",
+            "Tumour Type_13.0": "CNS Tumour_13.0",
+            "Tumour Stage_2.0": "Tumour Stage II_2.0",
+            "Tumour Stage_3.0": "Tumour Stage III_3.0",
+            "Tumour Stage_4.0": "Tumour Stage IV_4.0",
+            "Tumour Stage_99.0": "Missing Tumour Data_99",
+            "Time Since Diagnosis_1.0": "TSD >10y_1.0",
+            "Time Since Diagnosis_2.0": "TSD 10-15y_2.0",
+            "BMI Group_2.0": "BMI Underweight_2.0",
+            "BMI Group_3.0": "BMI Overweight_3.0",
+            "BMI Group_4.0": "BMI Obese_4.0", # Unsure if to still keep as Obese; otherwise, Excess Weight   
+        }
+
+        self.df = self.df.rename(columns=encoded_cols)
+
         self.X = self.df.drop(columns=["Negative Body Image"])
         print("X INFO")
         self.X.info()
@@ -144,18 +181,29 @@ class DataPreProcessing:
         Train Test Val (Ttv) Split Function
         
             - Split the Data into training, validation, and test sets. 
-                Current split:, 80% training, 20% validation, and 10% test.
+                Current split:, 70% training, 20% validation, and 10% test.
         
+        Input:
+            - Splits: A dictionary containing the test size and validation size.
+                Key: test_size.val_size
+                Value: [test_size, val_size]
+                #FIXME: Is this the best way to do this?
+                #FIXME: Need to save which split was chosen for reproducibility. 
+
         Returns the split data as dataframes.
 
         """
+        
+        splits = {
+            1.1: [0.1, 0.1], # 80% train; 10% test, 10% val 
+            1.2: [0.1, 0.2], # 70% train; 10% test, 20% val
+            1.3: [0.1, 0.3], # 60% train; 10% test, 30% val
+            2.1: [0.2, 0.1], # 70% train; 20% test, 10% val
+            2.2: [0.2, 0.2] # 60% train; 20% test, 20% val
+        }
 
-        train_split_size = 0.8
-        test_split_size = 0.1
-        val_split_size = 0.2
-
-        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(self.X, self.y, test_size=test_split_size, random_state=42)
-        self.X_train, self.X_val, self.y_train, self.y_val = train_test_split(self.X_train, self.y_train, test_size=val_split_size, random_state=42)
+        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(self.X, self.y, test_size=splits[1.2][0], random_state=42)
+        self.X_train, self.X_val, self.y_train, self.y_val = train_test_split(self.X_train, self.y_train, test_size=splits[1.2][1], random_state=42)
         
         print(f'\n X_train shape: {self.X_train.shape}, y_train shape: {self.y_train.shape}, \n X_test shape: {self.X_test.shape}, y_test shape: {self.y_test.shape}, \n X_val shape: {self.X_val.shape}, y_val shape: {self.y_val.shape}')
 
@@ -170,6 +218,8 @@ if __name__ == "__main__":
     pre_process_data.Rename_Cols(df)
     pre_process_data.Cat_Encoder(df)
     pre_process_data.Ttv_Split()
+
+
 
     
 
