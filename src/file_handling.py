@@ -36,6 +36,7 @@ class FileSave:
         self.csv_metrics_files = None
         self.file_reader = None
         self.combined_ft_vals = None
+        self.ft_tally = []
 
         self.model_folder = input("Choose model: ctgan, fast_ml, gc: ")
         self.algorithm = input("Choose algorithm: log_reg, rf, mlp: ")
@@ -58,8 +59,8 @@ class FileSave:
 
             self.run = '_'.join(file.split('/')[-1].split('_')[0:2])
 
-            self.pre_processor = DataPreProcessing(self.df)
-            self.df = self.pre_processor.df
+            # self.pre_processor = DataPreProcessing(self.df)
+            # self.df = self.pre_processor.df
 
             self.processor = DataProcessing(self.df, self.algorithm)
             self.processor.Smote_Class_Balance()
@@ -375,19 +376,21 @@ class FileSave:
         self.metric_values = []
   
         for file in self.csv_metrics_files:
-            with open(file, newline='') as f:
-                self.file_reader = list(csv.reader(f, dialect='excel'))
-                self.file_reader = pd.DataFrame(self.file_reader).transpose()
-                
-                self.metric_values.append(self.file_reader.iloc[:, 1])
-        self.metric_names.append(self.file_reader.iloc[:, 0])
+            f = open(file, newline='')
+            self.file_reader = list(csv.reader(f, dialect='excel'))
+            f.close()
+            self.file_reader = pd.DataFrame(self.file_reader)
+            
+            self.metric_values.append(self.file_reader.iloc[1, :]) # was 0
+
+        self.metric_names.append(self.file_reader.iloc[0, :])
         
-        self.con_met_names = pd.concat(self.metric_names, axis=0)
-        self.con_met_values = pd.concat(self.metric_values, axis=1)
-        
+        self.con_met_names = pd.concat(self.metric_names, axis=0).reset_index(drop=True) #maybe should be 0
+        self.con_met_values = pd.concat(self.metric_values, axis=1).reset_index(drop=True) # was 0
+            
         # Combine metric names and values into a single DataFrame
-        self.combined_metrics = pd.concat([self.con_met_names.reset_index(drop=True), self.con_met_values.reset_index(drop=True)], axis=1)
-        self.combined_metrics.columns = ['Metrics/Attributes'] + [f'File_{self.run}' for _ in range(len(self.csv_metrics_files))]
+        self.combined_metrics = pd.concat([self.con_met_names, self.con_met_values], axis=1, ignore_index=True)
+        self.combined_metrics.columns = ['Metrics/Attributes'] + [f'File_{i+1}' for i in range(len(self.csv_metrics_files))]
         
         # Save the combined metrics to a CSV file
         self.combined_metrics.to_csv(os.path.join(self.csv_folder, 'combined_metrics.csv'), index=False)
@@ -402,23 +405,24 @@ class FileSave:
 
         # Combine ft names and values into a single DataFrame
         for file in self.csv_ft_files:
-            with open(file, newline='') as f:
-                self.file_reader = list(csv.reader(f, dialect='excel'))
-                self.file_reader = pd.DataFrame(self.file_reader)
+            f = open(file, newline='')
+            self.file_reader = list(csv.reader(f, dialect='excel'))
+            self.file_reader = pd.DataFrame(self.file_reader)
+            f.close()
 
-                # Add a blank row before each file's feature names and values
-                self.feature_names_indiv.append(pd.Series([None])) # append as file name
-                # FIXME: self.feature_names_indiv.append(pd.Series([file])) # append as file name
-                self.feature_values.append(pd.Series([None])) # append as None
+            # Add a blank row before each file's feature names and values
+            self.feature_names_indiv.append(pd.Series([None])) # append as file name
+            # FIXME: self.feature_names_indiv.append(pd.Series([file])) # append as file name
+            self.feature_values.append(pd.Series([None])) # append as None
 
-                self.feature_names_indiv.append(self.file_reader.iloc[1:, 0])
-                self.feature_values.append(self.file_reader.iloc[1:, 1])
-                
+            self.feature_names_indiv.append(self.file_reader.iloc[1:, 0])
+            self.feature_values.append(self.file_reader.iloc[1:, 1])
+            
         self.con_ft_names = pd.concat(self.feature_names_indiv, axis=0).reset_index(drop=True)
         self.con_ft_values = pd.concat(self.feature_values, axis=0).reset_index(drop=True)
 
         # Combine feature names and values into a single DataFrame
-        self.combined_ft_vals = pd.concat([self.con_ft_names, self.con_ft_values], axis=1)
+        self.combined_ft_vals = pd.concat([self.con_ft_names, self.con_ft_values], axis=1) # FIXME: Not properly updating
         self.combined_ft_vals.columns = ['Feature Names', 'Values']
 
         self.seen_features = set()
@@ -431,8 +435,6 @@ class FileSave:
         print('Ici', self.seen_features)
     
     def Tally_Features(self):
-
-        self.ft_tally = []
             
         # Save the combined metrics to a CSV file
         self.combined_ft_vals.to_csv(os.path.join(self.csv_folder, 'combined_ft_vals.csv'), index=False)
