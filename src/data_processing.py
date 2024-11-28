@@ -9,7 +9,7 @@ from scipy import stats
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.neural_network import MLPClassifier
-from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.model_selection import  GridSearchCV
 from sklearn.feature_selection import SelectFromModel
 from sklearn.utils.class_weight import compute_class_weight
 from imblearn.over_sampling import SMOTE
@@ -46,7 +46,9 @@ class DataProcessing:
         self.best_estimator_log = None
         self.model_log_features = None 
         self.best_params_log = None
-
+        self.selected_features_log = None
+        self.selected_features_mask_log = None
+        self.feature_importance_log = None
 
         self.random_forest = None
         self.random_forest_ft = None
@@ -54,7 +56,9 @@ class DataProcessing:
         self.model_rf_features = None
         self.best_estimator_rf = None
         self.best_params_rf = None
-
+        self.selected_features_rf = None
+        self.selected_features_mask_rf = None
+        self.importance_scores_rf = None
 
         self.mlp = None
         self.mlp_ft = None
@@ -62,14 +66,14 @@ class DataProcessing:
         self.model_mlp_features = None
         self.best_estimator_mlp = None
         self.best_params_mlp = None
-
-        self.selected_features_mask = None 
-
+        self.selected_features_mlp = None
+        self.selected_features_mask_mlp = None 
+        self.importance_scores_mlp = None
 
         self.orig_train_size = None
         self.post_smote_train_size = None
-        self.class_weight_OG = None
-        self.class_weight_smote = None
+        self.class_weight_pre_smote = None
+        self.class_weight_post_smote = None
 
     def Smote_Class_Balance(self) -> pd.DataFrame:
 
@@ -83,16 +87,16 @@ class DataProcessing:
         '''
 
         self.orig_train_size = self.X_train_OG.shape
-        self.class_weight_OG = compute_class_weight(class_weight='balanced', classes=np.unique(self.y_train), y=self.y_train)
+        self.class_weight_pre_smote = compute_class_weight(class_weight='balanced', classes=np.unique(self.y_train), y=self.y_train)
         
         self.sm = SMOTE(random_state=42) # To balance ds
         self.X_train, self.y_train = self.sm.fit_resample(self.X_train_OG, self.y_train)    
         
         self.post_smote_train_size = self.X_train.shape
-        self.class_weight_smote = compute_class_weight(class_weight='balanced', classes=np.unique(self.y_train), y=self.y_train)
+        self.class_weight_post_smote = compute_class_weight(class_weight='balanced', classes=np.unique(self.y_train), y=self.y_train)
 
-        print (f'\n Original training data size: {self.orig_train_size}, Post-SMOTE training data size: {self.post_smote_train_size}')
-        print (f'\n Class weights before SMOTE: {self.class_weight_OG}, Class weights after SMOTE: {self.class_weight_smote}')
+        print (f'\n Original training data size: {self.orig_train_size}, \n Post-SMOTE training data size: {self.post_smote_train_size}')
+        print (f'\n Class weights before SMOTE: {self.class_weight_pre_smote}, \n Class weights after SMOTE: {self.class_weight_post_smote}')
     
         return self.X_train, self.y_train
 
@@ -101,16 +105,19 @@ class DataProcessing:
         """
 
         Function to initialize and fit the indicated model
-
-            1. log_reg_e:  logistic regression model with elastic net regularization
-                The l1_ratio parameter controls the mix of L1 and L2 regularization: 0.5   
-                C controls the sparsity: the smaller C the fewer features selected: 0.1
-            2. rf: Random Forest Classifier 
-                n_estimators = trees. The more trees, the less likely the model is to overfit. General range: 50-200
-            3. mlp: Multi-layer Perceptron Classifier 
-                Activation function: logistic
-                alpha: Alpha in a  MLP typically represents L2 regularization strength only. 
-                hidden_layer_sizes: 100 is defult. 50, 100, 200 are common choices.
+        
+        Inputs
+            log_reg_e: logistic regression model with elastic net regularization
+                - The l1_ratio parameter controls the mix of L1 and L2 regularization: 0.5   
+                - C controls the sparsity: the smaller C the fewer features selected: 0.1
+            
+            rf: Random Forest Classifier 
+                - n_estimators = trees. The more trees, the less likely the model is to overfit. General range: 50-200
+            
+            mlp: Multi-layer Perceptron Classifier 
+                - Activation function: logistic
+                - alpha: Alpha in a MLP typically represents L2 regularization strength only. 
+                - hidden_layer_sizes: 100 is defult. 50, 100, 200 are common choices.
         
         """
 
@@ -120,12 +127,12 @@ class DataProcessing:
             return self.log_reg_e
 
         if self.algorithm == 'rf':
-            self.random_forest = RandomForestClassifier(n_estimators=100, random_state=42)
+            self.random_forest = RandomForestClassifier(random_state=42) 
             self.random_forest.fit(self.X_train, self.y_train)
             return self.random_forest
 
         if self.algorithm == 'mlp':
-            self.mlp = MLPClassifier(shuffle=True, verbose=True, activation='logistic')
+            self.mlp = MLPClassifier(shuffle=True, activation='logistic', random_state=42)
             self.mlp.fit(self.X_train, self.y_train)
             return self.mlp
     
@@ -137,13 +144,12 @@ class DataProcessing:
         Function to select features based on importance for the model.
 
         Inputs
-
             SelectFromModel applied to log_reg_e
                 - Selects features based on the fitted model.
                 - Threshold parameter: If None and if the estimator has a parameter penalty set to l1, 
                         either explicitly or implicitly (e.g, Lasso), the threshold used is 1e-5.
 
-            Permutation Importance only applied to mlp and rf. Don't have coef_ attribute.
+            Permutation Importance only applied to mlp and rf. No coef_ attribute.
                 - permutation_importance: Computed feature importances using permutation importance.
                     - n_repeats: Number of times to permute the feature. Default is 5.
                     - random_state: Random seed for reproducibility.
@@ -151,9 +157,8 @@ class DataProcessing:
                 - threshold: The threshold for selecting the top 20% of features.
 
             Across all models:
-                a. selected_features_mask: A mask indicating which features were selected.
-                b. selected_features: The names of the selected features from mask
-                c. Transforms the training and validation datasets to `X_train_ft` and `X_val_ft` to include only the selected features.
+                - selected_features_mask: A mask indicating which features were selected.
+                - Transforms the training and validation datasets to `X_train_ft` and `X_val_ft` to include only the selected features.
        
         Outputs
             X_train_ft: The training dataset with only the selected features.
@@ -164,34 +169,33 @@ class DataProcessing:
 
         if self.algorithm=="log_reg":
             self.model_log_features = SelectFromModel(self.log_reg_e, prefit=True)
-            self.selected_features_mask = self.model_log_features.get_support()
-            self.selected_features = self.X_train.columns[self.selected_features_mask]
-            self.X_train_ft = pd.DataFrame(self.model_log_features.transform(self.X_train), columns=self.selected_features)
-            self.X_val_ft = pd.DataFrame(self.model_log_features.transform(self.X_val), columns=self.selected_features)
+            self.selected_features_mask_log = self.model_log_features.get_support()
+            self.selected_features_log = self.X_train.columns[self.selected_features_mask_log]
+            self.X_train_ft = pd.DataFrame(self.model_log_features.transform(self.X_train), columns=self.selected_features_log)
+            self.X_val_ft = pd.DataFrame(self.model_log_features.transform(self.X_val), columns=self.selected_features_log)
 
         if self.algorithm=="rf":
-            self.result_rf = permutation_importance(self.random_forest, self.X_train, self.y_train, random_state=42, scoring='accuracy') #FIXME: can include n_repeats=10
-            self.importance_scores_rf = self.result_rf.importances_mean
+            self.importance_scores_rf = self.random_forest.feature_importances_
             self.threshold_rf = sorted(self.importance_scores_rf, reverse=True)[int(len(self.importance_scores_rf) * 0.2)]  # Select top 20% features
-            self.selected_features_mask = self.importance_scores_rf >= self.threshold_rf
-            self.selected_features = self.X_train.columns[self.selected_features_mask]
-            self.X_train_ft = pd.DataFrame(self.X_train.loc[:, self.selected_features])
-            self.X_val_ft = pd.DataFrame(self.X_val.loc[:, self.selected_features])
+            self.selected_features_mask_rf = self.importance_scores_rf >= self.threshold_rf
+            self.selected_features_rf = self.X_train.columns[self.selected_features_mask_rf]
+            self.X_train_ft = pd.DataFrame(self.X_train.loc[:, self.selected_features_rf])
+            self.X_val_ft = pd.DataFrame(self.X_val.loc[:, self.selected_features_rf])
 
         if self.algorithm=="mlp":
-            self.result_mlp = permutation_importance(self.mlp, self.X_train, self.y_train, random_state=42, scoring='accuracy') #FIXME: can include n_repeats=10
-            self.importance_scores_mlp = self.result_mlp.importances_mean
-            self.threshold_mlp = sorted(self.importance_scores_mlp, reverse=True)[int(len(self.importance_scores_mlp) * 0.2)]  # Select top 20% features
-            self.selected_features_mask = self.importance_scores_mlp >= self.threshold_mlp
-            self.selected_features = self.X_train.columns[self.selected_features_mask]
-            self.X_train_ft = pd.DataFrame(self.X_train.loc[:, self.selected_features])
-            self.X_val_ft = pd.DataFrame(self.X_val.loc[:, self.selected_features])
+            self.importance_scores_mlp = permutation_importance(self.mlp, self.X_train, self.y_train, random_state=42, scoring='accuracy') 
+            self.importance_scores_mean_mlp = np.array(self.importance_scores_mlp.importances_mean)
+            self.threshold_mlp = sorted(self.importance_scores_mean_mlp, reverse=True)[int(len(self.importance_scores_mean_mlp) * 0.2)]  # Select top 20% features
+            self.selected_features_mask_mlp = self.importance_scores_mean_mlp >= self.threshold_mlp
+            self.selected_features_mlp = self.X_train.columns[self.selected_features_mask_mlp]
+            self.X_train_ft = pd.DataFrame(self.X_train.loc[:, self.selected_features_mlp])
+            self.X_val_ft = pd.DataFrame(self.X_val.loc[:, self.selected_features_mlp])
 
 
         print("\n See selected features in X_train_ft: \n ")
         self.X_train_ft.info()
 
-        return self.X_train_ft, self.X_val_ft, self.selected_features
+        return self.X_train_ft, self.X_val_ft, self.selected_features_log, self.selected_features_rf, self.selected_features_mlp, self.importance_scores_rf, self.importance_scores_mlp, self.model_log_features, self.selected_features_mask_log, self.selected_features_mask_rf, self.selected_features_mask_mlp
 
       
 
@@ -203,25 +207,23 @@ class DataProcessing:
     
             1. Computes class weights to handle class imbalance
             2. Performs a grid search to find the best hyperparameters for the chosen model: grid_search_log, grid_search_rf, grid_search_mlp
-            3. Refits the model with the best hyperparameters on the selected features: Param_grid_elas, Param_grid_rf
-                Long runtime for MLP & grid search.(
+            3. Refits the model with the best hyperparameters on the selected features: Param_grid_elas, Param_grid_rf, Param_grid_mlp
             4. Makes predictions on the validation data on the selected features (ft).
 
         Inputs
-            param_grid: The hyperparameters to search for in each model.
-            scoring_metrics_log: The scoring metrics to choose for each model.
-            grid_search: The grid search object for each model.
+            - param_grid: The hyperparameters to search for in each model.
+            - scoring_metrics_log: The scoring metrics to choose for each model.
+            - grid_search: The grid search object for each model.
  
-
         Outputs
-            log_reg_e_ft: The refitted logistic regression model on the selected features.
-            random_forest_ft: The refitted random forest model on the selected features.
-            mlp_ft: The refitted MLP model on the selected features.
+            - log_reg_e_ft: The refitted logistic regression model on the selected features.
+            - random_forest_ft: The refitted random forest model on the selected features.
+            - mlp_ft: The refitted MLP model on the selected features.
 
-            best_params: The best hyperparameters found for each model.
-            best_estimator: The best estimator found for each model.
-            y_proba_ft: The predicted probabilities on the validation data.
-            y_pred_ft: The predicted labels on the validation data.
+            - best_params: The best hyperparameters found for each model.
+            - best_estimator: The best estimator found for each model.
+            - y_proba_ft: The predicted probabilities on the validation data.
+            - y_pred_ft: The predicted labels on the validation data.
 
         """
 
@@ -237,8 +239,8 @@ class DataProcessing:
                 param_grid=self.param_grid_elas, 
                 scoring=self.scoring_metrics_log_dict,  
                 refit='accuracy', 
-                cv=5, 
-                verbose=True) # cv = cross-validation = n folds
+                cv=5, # cv = cross-validation = n folds
+                verbose=True) 
             self.grid_search_log.fit(self.X_train_ft, self.y_train) 
             self.best_params_log = self.grid_search_log.best_params_ 
             self.best_estimator_log = self.grid_search_log.best_estimator_ 
@@ -253,9 +255,6 @@ class DataProcessing:
             self.y_proba_ft = self.log_reg_e_ft.predict_proba(self.X_val_ft)
 
             return self.log_reg_e, self.log_reg_e_ft, self.best_estimator_log, self.y_train, self.X_train_ft, self.X_val_ft, self.y_proba_ft, self.y_pred_ft
-
-
-
 
         if self.algorithm == 'rf':
 
@@ -280,7 +279,6 @@ class DataProcessing:
 
             # Refit on X_train_ft using best params
             self.random_forest_ft = RandomForestClassifier(**self.best_params_rf, verbose = True, random_state=42).fit(self.X_train_ft, self.y_train)
-            # 'criterion': ['gini', 'entropy'] # The function to measure the quality of a split. Supported criteria are “gini” for the Gini impurity and “entropy” for the information gain. (gini = default)
 
             print("\n Done fitting rf with best params")
             
@@ -289,31 +287,10 @@ class DataProcessing:
 
             return self.random_forest, self.random_forest_ft, self.best_estimator_rf, self.y_train, self.X_train_ft, self.X_val_ft, self.y_proba_ft, self.y_pred_ft
 
-
-
-
         if self.algorithm == 'mlp':
-            self.param_grid_mlp = {
-                'hidden_layer_sizes': [(50,), (100, ), (200, )],
-                'alpha': [0.0001, 0.001, 0.01, 0.1]
-            }
-
-            self.scoring_metrics_mlp = ['accuracy', 'precision', 'recall', 'f1', 'roc_auc']
-            self.scoring_metrics_mlp_dict = {metric: metric for metric in self.scoring_metrics_mlp}
-            self.grid_search_mlp = GridSearchCV(
-                estimator=self.mlp, 
-                param_grid=self.param_grid_mlp,
-                  scoring=self.scoring_metrics_mlp_dict, 
-                  refit='accuracy', 
-                  cv=5)
-            self.grid_search_mlp.fit(self.X_train_ft, self.y_train)
-            self.best_params_mlp = self.grid_search_mlp.best_params_
-            self.best_estimator_mlp = self.grid_search_mlp.best_estimator_
-            print("\n Best parameters found [mlp]: ", self.best_params_mlp)
-            print("\n Best estimator found [mlp]: ", self.best_estimator_mlp)
             
-            self.mlp_ft = MLPClassifier(**self.best_params_mlp, verbose = True, shuffle = True, activation='logistic').fit(self.X_train_ft, self.y_train)
-            print("\n Done fitting mlp with best params")
+            self.mlp_ft = MLPClassifier(verbose = True, shuffle = True, activation='logistic').fit(self.X_train_ft, self.y_train)
+            print("\n Done fitting mlp with X train; activation: logistic")
 
             self.y_pred_ft = self.mlp_ft.predict(self.X_val_ft)
             self.y_proba_ft = self.mlp_ft.predict_proba(self.X_val_ft)
@@ -327,13 +304,14 @@ class DataProcessing:
 
         Function to:
 
-            1. Compute feature importances (model_ft)
+            1. Compute feature importances for the selected model using the selected features.
                 - For log_reg: using coefficients, and odds ratios (of selected features). 
                         Then calculate standard errors and confidence intervals for coefficients.
 
                 - For rf: using feature importances. Random Forests inherently provide feature importance scores 
                         based on how useful each feature is in reducing the impurity (e.g., Gini impurity or entropy) 
                         across the trees in the forest. This is a built-in mechanism that leverages the structure of decision trees
+
                 - For mlp: using permutation importance. Permutation importance, on the other hand, is a model-agnostic method 
                         that can be applied to any predictive model, including MLPs. The weights in an MLP are distributed across 
                         many neurons and layers, making it difficult to directly interpret the importance of individual features
@@ -345,11 +323,14 @@ class DataProcessing:
         """
 
         if self.algorithm == 'log_reg':
+
             print("\n Feature importance for log_reg: ")
-            self.feature_importance_log = pd.Series(self.log_reg_e_ft.coef_.flatten(), index=self.selected_features)
+
+            self.feature_importance_log = pd.Series(self.log_reg_e_ft.coef_.flatten(), index=self.selected_features_log)
 
             self.coef = self.log_reg_e_ft.coef_.flatten()
-            # self.coef = np.sort(self.coef, axis=None)[::-1]
+
+            self.normalized_importance = np.abs(self.coef) / np.sum(np.abs(self.coef))
 
             # Calculate standard errors
             self.se = np.sqrt(np.diag(np.linalg.inv(np.dot(self.X_train_ft.T, self.X_train_ft))))
@@ -370,7 +351,8 @@ class DataProcessing:
             # Create a DataFrame of features, coefficients, odds ratios, p-values, and CIs
             self.feature_importance_log_df = pd.DataFrame({
                 'Feature': self.feature_importance_log.index,
-                'Importance': self.feature_importance_log.values.round(3),
+                'Importance': self.feature_importance_log.values.round(3), 
+                'Normalized Importance': self.normalized_importance.round(3),
                 'Coefficient': self.coef.flatten().round(3),
                 'Odds Ratio': self.odds_ratios.flatten().round(3),
                 'CI Lower': self.ci_lower_or.round(3),
@@ -384,38 +366,36 @@ class DataProcessing:
             return self.feature_importance_log_df
 
 
-
         if self.algorithm == 'rf':
-            #RF doesn't return coef_ like linear models do. instead they provide feature importances
             
             print("\n Feature importance for rf: ")
-            self.feature_importance_rf = self.random_forest_ft.feature_importances_
-            self.normalized_importance_rf = self.feature_importance_rf / np.sum(self.feature_importance_rf)
+
+            self.importance_scores_rf = self.random_forest_ft.feature_importances_
+            self.normalized_importance_rf = self.importance_scores_rf / np.sum(self.importance_scores_rf)
 
             self.feature_importance_rf_df = pd.DataFrame({
-                'Feature': self.selected_features,
-                'Importance': self.feature_importance_rf.round(3),
+                'Feature': self.selected_features_rf,
+                'Importance': self.importance_scores_rf.round(3),
                 'Normalized Importance': self.normalized_importance_rf.round(3)
             }).sort_values(by='Importance', ascending=False)
             
             print('\n', self.feature_importance_rf_df)
 
             return self.feature_importance_rf_df
-        
 
 
         if self.algorithm == 'mlp':
 
             print("\n Feature importance for mlp: ")
-            #MLP doesn't return coef_ like linear models do. instead they provide feature importances
-            self.result_mlp = permutation_importance(self.mlp_ft, self.X_train_ft, self.y_train, n_repeats=10, random_state=42)
-            self.importance_scores_mlp = self.result_mlp.importances_mean
-            self.selected_features = self.X_train_ft.columns
-            self.normalized_importance_mlp = self.importance_scores_mlp / np.sum(self.importance_scores_mlp)
+
+            self.importance_scores_mlp = permutation_importance(self.mlp_ft, self.X_train_ft, self.y_train, n_repeats=5, random_state=42)
+            self.importance_scores_mean_mlp = np.array(self.importance_scores_mlp.importances_mean)
+            self.selected_features_mlp = self.X_train_ft.columns
+            self.normalized_importance_mlp = self.importance_scores_mean_mlp / np.sum(self.importance_scores_mean_mlp)
 
             self.feature_importance_mlp_df = pd.DataFrame({
-                'Feature': self.selected_features,
-                'Importance': self.importance_scores_mlp.round(3), 
+                'Feature': self.selected_features_mlp,
+                'Importance': self.importance_scores_mean_mlp.round(3), 
                 'Normalized Importance': self.normalized_importance_mlp.round(3)
             }).sort_values(by='Importance', ascending=False)
 

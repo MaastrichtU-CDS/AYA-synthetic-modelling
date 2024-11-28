@@ -10,12 +10,12 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 from datetime import datetime
+import pytz
 
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, PageBreak
 from reportlab.lib import colors
-# import PyPDF2 
 from PyPDF2 import PdfMerger
 
 from reportlab.platypus import Paragraph
@@ -33,11 +33,8 @@ class FileSave:
         self.merged_folder = None
         self.plots_folder = None
         self.csv_folder = None
-        self.csv_metrics_files = None
         self.file_reader = None
-        self.combined_ft_vals = None
-        self.ft_tally = []
-
+        
         self.model_folder = input("Choose model: ctgan, fast_ml, gc: ")
         self.algorithm = input("Choose algorithm: log_reg, rf, mlp: ")
 
@@ -57,10 +54,19 @@ class FileSave:
             self.df = pd.read_csv(file, delimiter=',', encoding='latin1')
             self.df = pd.DataFrame(self.df.copy())
 
+            amsterdam_tz = pytz.timezone('Europe/Amsterdam') # Set timezone to Amsterdam
+            self.now = datetime.now(amsterdam_tz) # Get the current date and time in Amsterdam timezone
+            self.date_time = self.now.strftime("%d%m-%H%M") # Format the date and time as DDMM-HHMM
+            self.date = self.now.strftime("%d%m") 
+
             self.run = '_'.join(file.split('/')[-1].split('_')[0:2])
 
-            # self.pre_processor = DataPreProcessing(self.df)
-            # self.df = self.pre_processor.df
+            self.preprocessing = DataPreProcessing(self.df)
+            self.preprocessing.Rename_Cols(self.df)
+            self.preprocessing.Cat_Encoder(self.df)
+            self.preprocessing.Ttv_Split()
+            self.chosen_split = self.preprocessing.chosen_split
+            self.X = self.preprocessing.X
 
             self.processor = DataProcessing(self.df, self.algorithm)
             self.processor.Smote_Class_Balance()
@@ -70,10 +76,11 @@ class FileSave:
             self.processor.Feature_Importance()
 
             self.orig_train_size = self.processor.orig_train_size
-            self.class_weight_OG = self.processor.class_weight_OG
+            self.class_weight_OG = self.processor.class_weight_pre_smote
             self.post_smote_train_size = self.processor.post_smote_train_size
-            self.class_weight_smote = self.processor.class_weight_smote
+            self.class_weight_smote = self.processor.class_weight_post_smote
             self.X_train_ft = self.processor.X_train_ft
+            
 
             if self.algorithm == 'log_reg':
                 self.feature_importance_log_df = self.processor.feature_importance_log_df
@@ -100,10 +107,6 @@ class FileSave:
             self.Create_Folders()
             self.Save_Eval_Plots()
             self.Output_Attributes()
-        
-        self.Compare_Metrics()
-        self.Features_Concat()
-        self.Tally_Features()
 
     
     def Create_Folders(self):
@@ -115,6 +118,9 @@ class FileSave:
         Output:
             - save_folder: a folder within the results folder and with the name of the algorithm 
                 for model performance evaluations.
+            - merged_folder: a folder to save the merged PDFs of the evaluation plots and output attributes.
+            - plots_folder: a folder to save the individual evaluation plots.
+            - csv_folder: a folder to save the output attributes as CSV files.
 
         """
 
@@ -137,7 +143,7 @@ class FileSave:
             else:
                 print(f"Folder already exists: {folder}")
 
-        return self.df, self.save_folder, self.merged_folder, self.plots_folder, self.csv_folder
+        return self.save_folder, self.merged_folder, self.plots_folder, self.csv_folder
     
     def Save_Eval_Plots(self):
 
@@ -145,7 +151,7 @@ class FileSave:
 
         Function to save the evaluation plots (which have their own '_path') to save_folder.
 
-        Evaluation lots:
+        Evaluation plots:
             - Confusion Matrix
             - Correlation Matrix
             - ROC Curve
@@ -225,14 +231,13 @@ class FileSave:
     def Output_Attributes(self):
 
         """
-        # FIXME: Update function description
 
-        Function to save the textual and plotted output attributes of model/performance to save_folder in a merged PDF file.
+        Function to save the textual and plotted output attributes of model/performance to save_folder in a merged PDF (and/or csv) file.
 
         Input:
             - metric_data_text: textual evaluation data (dict). Also saved to a csv file for ease of access.
             - feature_data_text: textual selected feature importance data per model (dict). Also saved to a csv file for ease of access.
-            - Plots saved to a temp file and then to merged file,
+            - Plots saved to a temp file and then to merged file and folder.
 
         """
         
@@ -244,9 +249,10 @@ class FileSave:
 
         self.metric_data_text = {
             'Generator Model': self.model_folder,
-            'Date': self.date_time,
+            'Date/Time': self.date_time,
             'Algorithm': self.algorithm,
-            'Run_model': self.run,
+            'Run': self.run,
+            'Train, test, val split': str(self.chosen_split),
             'Train size before smote': str(self.orig_train_size),
             'Class balance before smote': str(self.class_weight_OG),
             'Train size after smote': str(self.post_smote_train_size),
@@ -258,7 +264,7 @@ class FileSave:
             'F1 Score': self.metrics_ft["F1 Score"],
             'Log Loss': self.metrics_ft["Log Loss"],
             'ROC AUC Score': self.metrics_ft["ROC AUC Score"],
-            'Best Estimators': self.best_estimator_log if self.algorithm == 'log_reg' else self.best_estimator_mlp if self.algorithm == 'mlp' else self.best_estimator_rf
+            'Best Estimators': self.best_estimator_log if self.algorithm == 'log_reg' else self.best_estimator_rf if self.algorithm == 'rf' else "N/A"
         }
 
         # Swap columns and rows in the table
@@ -321,7 +327,6 @@ class FileSave:
                   ('LEFTPADDING', (0, 0), (-1, -1), 6),
                   ('RIGHTPADDING', (0, 0), (-1, -1), 6),
                   ('TOPPADDING', (0, 0), (-1, -1), 6),
-                #   ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
                   ('GRID', (0, 0), (-1, -1), 0.5, colors.black)
                   ]))
         elements.append(feature_table)
@@ -360,118 +365,6 @@ class FileSave:
 
         # Remove the temporary report PDF file
         os.remove(temp_report_pdf_file)
-
-    def Compare_Metrics(self):
-        
-        ''' 
-
-        Fx to concatenate metrics of all files in csv_metrics_files and keep 1st col.
-
-        '''
-
-        self.csv_metrics_files = [os.path.join(self.csv_folder, file) 
-                 for file in os.listdir(self.csv_folder) if 'Metrics' in file]
-        
-        self.metric_names = []
-        self.metric_values = []
-  
-        for file in self.csv_metrics_files:
-            f = open(file, newline='')
-            self.file_reader = list(csv.reader(f, dialect='excel'))
-            f.close()
-            self.file_reader = pd.DataFrame(self.file_reader)
-            
-            self.metric_values.append(self.file_reader.iloc[1, :]) # was 0
-
-        self.metric_names.append(self.file_reader.iloc[0, :])
-        
-        self.con_met_names = pd.concat(self.metric_names, axis=0).reset_index(drop=True) #maybe should be 0
-        self.con_met_values = pd.concat(self.metric_values, axis=1).reset_index(drop=True) # was 0
-            
-        # Combine metric names and values into a single DataFrame
-        self.combined_metrics = pd.concat([self.con_met_names, self.con_met_values], axis=1, ignore_index=True)
-        self.combined_metrics.columns = ['Metrics/Attributes'] + [f'File_{i+1}' for i in range(len(self.csv_metrics_files))]
-        
-        # Save the combined metrics to a CSV file
-        self.combined_metrics.to_csv(os.path.join(self.csv_folder, 'combined_metrics.csv'), index=False)
-
-    def Features_Concat(self):
-
-        self.csv_ft_files = [os.path.join(self.csv_folder, file) 
-            for file in os.listdir(self.csv_folder) if 'Feature_Importance' in file] 
-        
-        self.feature_names_indiv = [] 
-        self.feature_values = []
-
-        # Combine ft names and values into a single DataFrame
-        for file in self.csv_ft_files:
-            f = open(file, newline='')
-            self.file_reader = list(csv.reader(f, dialect='excel'))
-            self.file_reader = pd.DataFrame(self.file_reader)
-            f.close()
-
-            # Add a blank row before each file's feature names and values
-            self.feature_names_indiv.append(pd.Series([None])) # append as file name
-            # FIXME: self.feature_names_indiv.append(pd.Series([file])) # append as file name
-            self.feature_values.append(pd.Series([None])) # append as None
-
-            self.feature_names_indiv.append(self.file_reader.iloc[1:, 0])
-            self.feature_values.append(self.file_reader.iloc[1:, 1])
-            
-        self.con_ft_names = pd.concat(self.feature_names_indiv, axis=0).reset_index(drop=True)
-        self.con_ft_values = pd.concat(self.feature_values, axis=0).reset_index(drop=True)
-
-        # Combine feature names and values into a single DataFrame
-        self.combined_ft_vals = pd.concat([self.con_ft_names, self.con_ft_values], axis=1) # FIXME: Not properly updating
-        self.combined_ft_vals.columns = ['Feature Names', 'Values']
-
-        self.seen_features = set()
-
-        # if con_ft_names contains multiple instances of the same feature names, print the feature and add to list of seen features
-        if self.con_ft_names.duplicated().any():
-            # print('Duplicates found')
-            # print(self.con_ft_names[self.con_ft_names.duplicated()])
-            self.seen_features = self.seen_features.union(set(self.con_ft_names[self.con_ft_names.duplicated()])) # FIXME: will also want to print vals
-        print('Ici', self.seen_features)
-    
-    def Tally_Features(self):
-            
-        # Save the combined metrics to a CSV file
-        self.combined_ft_vals.to_csv(os.path.join(self.csv_folder, 'combined_ft_vals.csv'), index=False)
-
-        # Tally loop
-        # self.feature_names_whole = self.df.columns.tolist()
-        self.feature_names_whole = pd.read_csv("/root/encoded_df.csv").transpose().iloc[:38].index.tolist() # FIXME: currently have issues getting the feature names from the df as it tends to stay as original name, so using a hard file path for now.
-        self.feature_names_whole = pd.DataFrame(self.feature_names_whole, columns=['Feature Names'])        
-        self.feature_names_whole['Tally'] = 0
-
-        for feature_series in self.feature_names_indiv:
-            for feature in feature_series.dropna().values:
-                if feature in self.feature_names_whole['Feature Names'].values:
-                    self.feature_names_whole.loc[self.feature_names_whole['Feature Names'] == feature, 'Tally'] += 1
-                else:
-                    pass
-
-        self.feature_names_whole.to_csv(os.path.join(self.csv_folder, 'tally.csv'), index=False)
-        
-        # print('\n Ft Whole Tally \n ', self.feature_names_whole) # indent into for loop to get tally counter incrementing.
-        # print('\n Ft Tally \n ', self.ft_tally)
-        # # print('vals: ', self.feature_values)
-        # print('\n names_indiv \n', self.feature_names_indiv)
-        # print('\n file_reader \n', self.file_reader)
-        # print('\n con\n ', self.con_ft_values)
-
-
-
-
-    # FIXME: 
-    # Then will want to add this maybe by 
-        # a) comparing all the files in the folder, but ideally as a final loop/code of 
-            # eg. the generated data loop which we need to make a non-static var for 
-    # Maybe later down the line will want to compare those metric values by each other so then the number is like a difference score --> Would have to consider how to think about which one outperforms like how's that indicated. 
-
-
-
 
 if __name__ == "__main__":
 

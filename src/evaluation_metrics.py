@@ -43,6 +43,7 @@ class EvaluateModel:
         self.Correlation_Plot = None
         self.ROC_Curve_plot = None
         self.OR_CI_Plot = None
+        self.Normalized_Importance_log_Plot = None
         self.Normalized_Importance_rf_Plot = None
         self.Normalized_Importance_mlp_Plot = None
     
@@ -159,10 +160,26 @@ class EvaluateModel:
             1. Create and save normalized importance plot.
             2. Sort the DataFrame by normalized importance for better visualization.
             3. Plot and return the normalized importances.
-    
-        Only for rf and mlp because no ORs/CIs.
 
         """
+
+        if self.algorithm == "log_reg":
+                
+            self.Normalized_Importance_log_Plot, ax = plt.subplots(figsize=(10, 10))
+    
+            # Sort the DataFrame by normalized importance for better visualization
+            self.feature_importance_log_df = self.feature_importance_log_df.sort_values(by='Normalized Importance', ascending=False)
+            
+            # Plotting the normalized importances
+            ax.barh(self.feature_importance_log_df['Feature'], self.feature_importance_log_df['Normalized Importance'], color='skyblue')
+            
+            ax.set_xlabel('Normalized Importance')
+            ax.set_ylabel('Feature')
+            ax.set_title(f'{self.algorithm} Normalized Feature Importances')
+            ax.grid(True)
+            plt.show()
+                
+            return self.Normalized_Importance_log_Plot
 
         if self.algorithm == "rf":
 
