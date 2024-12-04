@@ -6,14 +6,30 @@ from sklearn.preprocessing import OneHotEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.model_selection import train_test_split
 
-# Data exploration
 # Rename columns
 # Encoder
-# Split
 
 
 class DataPreProcessing: 
     def __init__(self, df: pd.DataFrame):
+
+        """
+
+        Function to preprocess the data for the model.
+        - Raname columns for better readability.
+        - Encode categorical columns using a OneHotEncoder.
+        - Split the data into training and testing sets.
+
+        Input:
+            - df (pd.DataFrame): The DataFrame to preprocess. A copy of the original DataFrame is made to avoid altering the original data.
+
+        self.X: SD minus the target column.
+        self.y: The target column: Negative Body Image.
+
+        Note: Test data is Original Data
+        
+        """
+
         self.df = df.copy()
         if 'leeft' in self.df.columns:
             self.df.drop(columns='leeft', inplace=True)
@@ -21,26 +37,12 @@ class DataPreProcessing:
         self.X = None
         self.y = None
 
-        self.X_train = None
-        self.X_test = None
-        self.X_val = None
-        self.y_val = None
-        self.y_train = None
-        self.y_test = None
-
-        self.chosen_split = None
-
-    def Data_Exploration(self):
-        print("\n Original data before processing \n")
-        print(self.df.head())
-        print(self.df.info())
-        print(self.df.describe())
 
     def Rename_Cols(self, df:pd.DataFrame):
 
         """
 
-        Function to rename columns of the DataFrame (copy).
+        Function to rename columns of the DataFrame.
        
         """
 
@@ -132,7 +134,7 @@ class DataPreProcessing:
         self.df = pd.DataFrame(df_transformed, columns=np.concatenate([ohe_feature_names, self.df.drop(columns=cat_cols).columns]))
 
         # Rename encoded columns for better readability
-        self.encoded_cols = {
+        encoded_cols = {
             "Education Level_0.0": "No/Primary Education_1.0",
             "Education Level_1.0": "Secondary Education_2.0",
             "Tumour Type_2.0": "Head/Neck Tumour_2.0",
@@ -158,7 +160,7 @@ class DataPreProcessing:
             "BMI Group_4.0": "BMI Obese_4.0", 
         }
 
-        self.df = self.df.rename(columns=self.encoded_cols)
+        self.df = self.df.rename(columns=encoded_cols)
 
         self.X = self.df.drop(columns=["Negative Body Image"])
         print("X INFO")
@@ -171,50 +173,14 @@ class DataPreProcessing:
         return self.df, self.X, self.y
 
 
-    def Ttv_Split(self) -> pd.DataFrame:
-        
-        """
-
-        Train Test Val (Ttv) Split Function
-        
-            - Split the Data into training, validation, and test sets. 
-                Current split: 70% training, 20% validation, and 10% test.
-        
-        Input:
-            - splits: A dictionary containing the test size and validation size.
-                Key: test_size.val_size
-                Value: [test_size, val_size]
-
-        Returns the split data as dataframes.
-
-        """
-        
-        self.splits = {
-            1.1: [0.1, 0.1], # 80% train; 10% test, 10% val 
-            1.2: [0.1, 0.2], # 70% train; 10% test, 20% val
-            1.3: [0.1, 0.3], # 60% train; 10% test, 30% val
-            2.1: [0.2, 0.1], # 70% train; 20% test, 10% val
-            2.2: [0.2, 0.2]  # 60% train; 20% test, 20% val
-        }
-
-        self.chosen_split = 1.2  # Save the chosen split to a variable
-
-        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(self.X, self.y, test_size=self.splits[self.chosen_split][0], random_state=42)
-        self.X_train, self.X_val, self.y_train, self.y_val = train_test_split(self.X_train, self.y_train, test_size=self.splits[self.chosen_split][1], random_state=42)
-        
-        print(f'\n X_train shape: {self.X_train.shape}, y_train shape: {self.y_train.shape}, \n X_test shape: {self.X_test.shape}, y_test shape: {self.y_test.shape}, \n X_val shape: {self.X_val.shape}, y_val shape: {self.y_val.shape}')
-        
-        return self.X_train, self.X_test, self.X_val, self.y_train, self.y_test, self.y_val
-
 if __name__ == "__main__":
     df_file_path = input("Provide df file path: ")
     df = pd.read_csv(df_file_path, delimiter=',', encoding='latin1')
     
     pre_process_data = DataPreProcessing(df)
-    pre_process_data.Data_Exploration()
     pre_process_data.Rename_Cols(df)
     pre_process_data.Cat_Encoder(df)
-    pre_process_data.Ttv_Split()
+
 
 
 

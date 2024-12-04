@@ -30,20 +30,20 @@ class EvaluateModel:
         self.processor.Parameter_Tuning()
         self.processor.Feature_Importance()
 
-        self.y_val = self.processor.y_val
+        self.X_ft = self.processor.X_ft
+        self.y = self.processor.y
         self.y_pred_ft = self.processor.y_pred_ft
         self.y_proba_ft = self.processor.y_proba_ft
-        self.X_train_ft = self.processor.X_train_ft
 
-        self.feature_importance_log_df = self.processor.feature_importance_log_df
+        self.feature_importance_log_reg_df = self.processor.feature_importance_log_reg_df
         self.feature_importance_rf_df = self.processor.feature_importance_rf_df
         self.feature_importance_mlp_df = self.processor.feature_importance_mlp_df
         
         self.Confusion_Matrix_Plot = None
         self.Correlation_Plot = None
-        self.ROC_Curve_plot = None
+        self.ROC_Curve_Plot = None
         self.OR_CI_Plot = None
-        self.Normalized_Importance_log_Plot = None
+        self.Normalized_Importance_log_reg_Plot = None
         self.Normalized_Importance_rf_Plot = None
         self.Normalized_Importance_mlp_Plot = None
     
@@ -58,7 +58,7 @@ class EvaluateModel:
         
         """
 
-        self.conf_matrix = confusion_matrix(self.y_val, self.y_pred_ft)
+        self.conf_matrix = confusion_matrix(self.y, self.y_pred_ft)
 
         self.Confusion_Matrix_Plot, ax = plt.subplots(figsize=(10, 10)) 
 
@@ -68,7 +68,6 @@ class EvaluateModel:
         ax.set_xlabel('Predicted', fontsize=14)
         ax.set_ylabel('Actual', fontsize=14)
         ax.set_title(f'{self.algorithm} Confusion Matrix', fontsize=16)
-
         plt.show()
 
         return self.Confusion_Matrix_Plot
@@ -82,7 +81,7 @@ class EvaluateModel:
         
         """
 
-        self.correlation_matrix = self.X_train_ft.corr(method="spearman")
+        self.correlation_matrix = self.X_ft.corr(method="spearman")
 
         self.Correlation_Plot, ax = plt.subplots(figsize=(10, 10))
         ax.tick_params(axis='x', labelsize=10)
@@ -90,7 +89,6 @@ class EvaluateModel:
         sns.set_theme(font_scale=0.8)
         sns.heatmap(self.correlation_matrix, annot=True, cmap="RdYlGn", linewidths=.5)
         ax.set_title(f'{self.algorithm} Correlation Matrix Heatmap of Selected Variables', fontsize=16)
-
         plt.show()
 
         return self.Correlation_Plot
@@ -103,10 +101,10 @@ class EvaluateModel:
         
         """
 
-        self.fpr, self.tpr, _ = roc_curve(self.y_val, self.y_proba_ft[:, 1])
-        self.auc = roc_auc_score(self.y_val, self.y_proba_ft[:, 1])
+        self.fpr, self.tpr, _ = roc_curve(self.y, self.y_proba_ft[:, 1])
+        self.auc = roc_auc_score(self.y, self.y_proba_ft[:, 1])
 
-        self.ROC_Curve_plot, ax = plt.subplots(figsize=(10, 10))
+        self.ROC_Curve_Plot, ax = plt.subplots(figsize=(10, 10))
 
         ax.plot(self.fpr, self.tpr, label=f'AUC = {self.auc:.2f}')
         ax.plot([0, 1], [0, 1], 'k--')
@@ -114,13 +112,11 @@ class EvaluateModel:
         ax.set_ylabel('True Positive Rate', fontsize=14)
         ax.tick_params(axis='x', labelsize=10)
         ax.tick_params(axis='y', labelsize=10)
-
         ax.set_title(f'{self.algorithm} ROC Curve', fontsize=16)
         ax.legend(loc='best')
-
         plt.show()
 
-        return self.ROC_Curve_plot
+        return self.ROC_Curve_Plot
 
 
     def Make_OR_CI(self):
@@ -135,10 +131,10 @@ class EvaluateModel:
 
         self.OR_CI_Plot, ax = plt.subplots(figsize=(10, 10))
 
-        if self.algorithm == 'log_reg':
-            ax.errorbar(self.feature_importance_log_df['Odds Ratio'], self.feature_importance_log_df['Feature'],
-                    xerr=[(self.feature_importance_log_df['Odds Ratio'] - self.feature_importance_log_df['CI Lower']).values,
-                            (self.feature_importance_log_df['CI Upper'] - self.feature_importance_log_df['Odds Ratio']).values],
+        if self.algorithm == 'log_reg': 
+            ax.errorbar(self.feature_importance_log_reg_df['Odds Ratio'], self.feature_importance_log_reg_df['Feature'],
+                    xerr=[(self.feature_importance_log_reg_df['Odds Ratio'] - self.feature_importance_log_reg_df['CI Lower']).values,
+                            (self.feature_importance_log_reg_df['CI Upper'] - self.feature_importance_log_reg_df['Odds Ratio']).values],
                     fmt='o', ecolor='r', capsize=5, capthick=2)
        
             ax.axvline(x=1, color='gray', linestyle='--')
@@ -146,7 +142,6 @@ class EvaluateModel:
             ax.set_ylabel('Features', fontsize=14)
             ax.set_xlabel('Odds Ratio', fontsize=14)
             ax.set_title(f'{self.algorithm} Odds Ratios with 95% Confidence Intervals', fontsize=16)
-
             plt.show()
 
             return self.OR_CI_Plot
@@ -167,30 +162,22 @@ class EvaluateModel:
                 
             self.Normalized_Importance_log_Plot, ax = plt.subplots(figsize=(10, 10))
     
-            # Sort the DataFrame by normalized importance for better visualization
-            self.feature_importance_log_df = self.feature_importance_log_df.sort_values(by='Normalized Importance', ascending=False)
-            
-            # Plotting the normalized importances
-            ax.barh(self.feature_importance_log_df['Feature'], self.feature_importance_log_df['Normalized Importance'], color='skyblue')
-            
+            self.feature_importance_log_reg_df = self.feature_importance_log_reg_df.sort_values(by='Normalized Importance', ascending=False)
+            ax.barh(self.feature_importance_log_reg_df['Feature'], self.feature_importance_log_reg_df['Normalized Importance'], color='skyblue')    
             ax.set_xlabel('Normalized Importance')
             ax.set_ylabel('Feature')
             ax.set_title(f'{self.algorithm} Normalized Feature Importances')
             ax.grid(True)
             plt.show()
                 
-            return self.Normalized_Importance_log_Plot
+            return self.Normalized_Importance_log_reg_Plot
 
         if self.algorithm == "rf":
 
             self.Normalized_Importance_rf_Plot, ax = plt.subplots(figsize=(10, 10))
     
-            # Sort the DataFrame by normalized importance for better visualization
             self.feature_importance_rf_df = self.feature_importance_rf_df.sort_values(by='Normalized Importance', ascending=False)
-            
-            # Plotting the normalized importances
             ax.barh(self.feature_importance_rf_df['Feature'], self.feature_importance_rf_df['Normalized Importance'], color='skyblue')
-            
             ax.set_xlabel('Normalized Importance')
             ax.set_ylabel('Feature')
             ax.set_title(f'{self.algorithm} RF Normalized Feature Importances')
@@ -202,13 +189,9 @@ class EvaluateModel:
         if self.algorithm == "mlp":
 
             self.Normalized_Importance_mlp_Plot, ax = plt.subplots(figsize=(10, 10))
-    
-            # Sort the DataFrame by normalized importance for better visualization
+
             self.feature_importance_mlp_df = self.feature_importance_mlp_df.sort_values(by='Normalized Importance', ascending=False)
-            
-            # Plotting the normalized importances
             ax.barh(self.feature_importance_mlp_df['Feature'], self.feature_importance_mlp_df['Normalized Importance'], color='skyblue')
-            
             ax.set_xlabel('Normalized Importance')
             ax.set_ylabel('Feature')
             ax.set_title(f'{self.algorithm} MLP Normalized Feature Importances')
@@ -228,13 +211,13 @@ class EvaluateModel:
         """
 
         self.metrics_ft = {
-            'Accuracy Score': round(accuracy_score(self.y_val, self.y_pred_ft), 3),
-            'Balanced Accuracy Score': round(balanced_accuracy_score(self.y_val, self.y_pred_ft), 3),
-            'Precision Score': round(precision_score(self.y_val, self.y_pred_ft), 3),
-            'Recall Score': round(recall_score(self.y_val, self.y_pred_ft), 3),
-            'F1 Score': round(f1_score(self.y_val, self.y_pred_ft), 3),
-            'Log Loss': round(log_loss(self.y_val, self.y_proba_ft), 3),
-            'ROC AUC Score': round(roc_auc_score(self.y_val, self.y_proba_ft[:, 1]), 3)
+            'Accuracy Score': round(accuracy_score(self.y, self.y_pred_ft), 3), 
+            'Balanced Accuracy Score': round(balanced_accuracy_score(self.y, self.y_pred_ft), 3),
+            'Precision Score': round(precision_score(self.y, self.y_pred_ft), 3),
+            'Recall Score': round(recall_score(self.y, self.y_pred_ft), 3),
+            'F1 Score': round(f1_score(self.y, self.y_pred_ft), 3), 
+            'Log Loss': round(log_loss(self.y, self.y_proba_ft), 3), 
+            'ROC AUC Score': round(roc_auc_score(self.y, self.y_proba_ft[:, 1]), 3) 
         }
 
         for metric, value in self.metrics_ft.items():
