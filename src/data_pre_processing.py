@@ -1,51 +1,97 @@
 import pandas as pd
 import numpy as np
-import sklearn
-from sklearn import datasets
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.compose import ColumnTransformer
-from sklearn.model_selection import train_test_split
-
-# Rename columns
-# Encoder
+from sklearn.experimental import enable_iterative_imputer
+from sklearn.impute import IterativeImputer
 
 
 class DataPreProcessing: 
-    def __init__(self, df: pd.DataFrame):
+    """
+    Class to preprocess the data to feed into the models.
+    """
 
+    def __init__(self, train_df:pd.DataFrame, test_df:pd.DataFrame):
         """
+        Initializes the DataPreProcessing class with the training and testing data.
+            Impute missing values in the test dataframe (test_df).
+            Raname columns for better readability.
+            Encode categorical and binary columns using a OneHotEncoder. Ensures proper reference values are dropped
 
-        Function to preprocess the data for the model.
-        - Raname columns for better readability.
-        - Encode categorical columns using a OneHotEncoder.
-        - Split the data into training and testing sets.
-
-        Input:
-            - df (pd.DataFrame): The DataFrame to preprocess. A copy of the original DataFrame is made to avoid altering the original data.
-
-        self.X: SD minus the target column.
-        self.y: The target column: Negative Body Image.
-
-        Note: Test data is Original Data
+        Parameters
+            pd.DataFrame train_df: The synthetic data generated from the original DataFrame
+            pd.DataFrame test_df: The original data.
+        """
         
+        # A copy of train_df and test_df is made to avoid directly altering the data.
+        self.train_df = train_df.copy()
+        self.test_df = test_df.copy()
+
+        self.X_train = None
+        self.y_train = None
+        self.X_test = None
+        self.y_test = None
+
+        # Age ('leeft') dropped from datasets.
+        self.train_df.drop(columns='leeft', inplace=True)
+        self.test_df.drop(columns='leeft', inplace=True)
+
+        # Columns with data type int64 in test_df are converted to float64 to avoid errors during encoding. Original data had a mix of int and float.
+        for col in self.test_df.columns:
+            if self.test_df[col].dtype == 'int64':
+                self.test_df[col] = self.test_df[col].astype('float64')
+
+
+    def Impute_Missing(self, zero_threshold=None):
+        """
+        Impute missing values in test_df.
+        
+        Parameters:
+            zero_threshold (float): define the proportion of values that can be missing. Variables that pass the threshold will be imputed with zero
+        
+        Returns:
+            test_df (pd.DataFrame) with missing values imputed.
         """
 
-        self.df = df.copy()
-        if 'leeft' in self.df.columns:
-            self.df.drop(columns='leeft', inplace=True)
+        # check if an appropriate threshold was given
+        if isinstance(zero_threshold, float) is False:
+            zero_threshold = 0.66
 
-        self.X = None
-        self.y = None
+            print(f'Using {zero_threshold} as threshold to zero-impute missing values.')
+
+            # retrieve columns with more than threshold proportion of missing values
+            high_missing_variables = [variable_name for variable_name in self.test_df.columns if
+                                    (self.test_df[variable_name].isna().sum() / len(self.test_df[variable_name])) >= zero_threshold]
+
+            # impute a value of 0 for those with more missing considered desirable
+            self.test_df[high_missing_variables] = self.test_df[high_missing_variables].fillna(0)
+
+            # initialise the imputation
+            print(f'Imputing using the MICE / Iterative Imputation procedure')
+
+            # use most frequent to cater for the plethora of categorical variables
+            imputation = IterativeImputer(keep_empty_features=True, initial_strategy='most_frequent')
+
+            # impute data and convert back to pd.DataFrame
+            self.test_df = pd.DataFrame(imputation.fit_transform(self.test_df), columns=self.test_df.keys())
+
+            # check if there are any missing values left
+            print("Imputation Test")
+            self.test_df.info()
+
+            return self.test_df
 
 
-    def Rename_Cols(self, df:pd.DataFrame):
+    def Rename_Cols(self):
+        """
+        Rename columns of the DataFrames before OHE for readability.
 
+        Returns:
+            train_df (pd.DataFrame): The training dataset with renamed columns
+            test_df (pd.DataFrame): The testing dataset with renamed columns
         """
 
-        Function to rename columns of the DataFrame.
-       
-        """
-
+        # Dictionary of columns to rename
         columns_to_rename = { 
             "ql": "Global Health Status",
             "pf": "Physical Functioning",
@@ -69,30 +115,27 @@ class DataPreProcessing:
             "BIneg_new": "Negative Body Image"
         }
 
-        self.df = self.df.rename(columns=columns_to_rename)
-        
-        print("\n Renamed columns in df: \n")
-        self.df.info()
-        
-        return self.df
+        self.train_df.rename(columns=columns_to_rename, inplace=True)
+        self.test_df.rename(columns=columns_to_rename, inplace=True)
 
-    def Cat_Encoder(self, df:pd.DataFrame)-> pd.DataFrame:
+        print('\n Columns Renamed')
 
+        return self.train_df, self.test_df
+
+
+    def Cat_Encoder(self):
         """
-
-        Function to:
-
-            1. Transform categorical columns using a OneHotEncoder.
-            2. Transform and refit the model with the one-hot-encoded data.
-
-        Input:
+        Encode categorical and binary columns using a OneHotEncoder. Ensures proper reference values are dropped. Model refitted with OHE data.
+    
+        Attributes:
             - refs (dict): A dictionary containing categorical columns and reference values established in original study. Reference values dropped.
                 
         Returns:
-            - df_encoded (pd.DataFrame): The new DataFrame with relevant columns encoded.
-        
+            - train_df: The one hot encoded training dataset
+            - test_df: The one hot encoded testing dataset
         """
 
+        # Reference values (to be dropped) for categorical and binary columns
         refs = {
             "Education Level": 3.0,
             "Tumour Type": 1.0,
@@ -108,47 +151,47 @@ class DataPreProcessing:
             "Chemotherapy": 0.0
         }
 
-        # Get categorical columns and their reference values to drop
-        cat_cols = list(refs.keys()) # Get the categorical columns
-        refs_to_drop = [refs[col] for col in cat_cols] # Get the reference values to drop  
-        print("DROP SPECS:", refs_to_drop)
+        # Get columns and their reference values to drop
+        ref_cols = list(refs.keys()) # Get the column names
+        refs_to_drop = [refs[col] for col in ref_cols] # Get the reference values
         
-        # Create a OneHotEncoder with drop specifications
-        ohe = OneHotEncoder(drop =refs_to_drop, sparse_output=False, handle_unknown='ignore')
+        # Create a OneHotEncoder and drop the reference values
+        ohe = OneHotEncoder(drop=refs_to_drop, sparse_output=False, handle_unknown='ignore')
 
-        # Apply the encoder to the specified  columns
+        # Encode the specified columns
         cat_col_transformer = ColumnTransformer(
             transformers=[
-                ('ohe', ohe, cat_cols)  
+                ('ohe', ohe, ref_cols)  
             ], remainder='passthrough'  # Keep other columns unchanged
         )
         
         # Fit and transform the DataFrame
-        df_transformed = cat_col_transformer.fit_transform(self.df)
+        train_df_transformed = cat_col_transformer.fit_transform(self.train_df)
+        ohe_feature_names = cat_col_transformer.named_transformers_['ohe'].get_feature_names_out(ref_cols)
+        self.train_df = pd.DataFrame(train_df_transformed, columns=np.concatenate([ohe_feature_names, self.train_df.drop(columns=ref_cols).columns]))
 
-        # Get the transformed column names
-        ohe_feature_names = cat_col_transformer.named_transformers_['ohe'].get_feature_names_out(cat_cols)
-        print("Encoded Categorical Features: ", ohe_feature_names)
+        test_df_transformed = cat_col_transformer.fit_transform(self.test_df)
+        ohe_feature_names = cat_col_transformer.named_transformers_['ohe'].get_feature_names_out(ref_cols)
+        self.test_df = pd.DataFrame(test_df_transformed, columns=np.concatenate([ohe_feature_names, self.test_df.drop(columns=ref_cols).columns]))
         
-        # Convert the result back to a DataFrame
-        self.df = pd.DataFrame(df_transformed, columns=np.concatenate([ohe_feature_names, self.df.drop(columns=cat_cols).columns]))
+        print('\n Data Encoded')
 
-        # Rename encoded columns for better readability
+        # Dictionary to rename the encoded columns
         encoded_cols = {
             "Education Level_0.0": "No/Primary Education_1.0",
             "Education Level_1.0": "Secondary Education_2.0",
-            "Tumour Type_2.0": "Head/Neck Tumour_2.0",
-            "Tumour Type_3.0": "Digestive Tumour_3.0",
-            "Tumour Type_4.0": "Colon and Rectal Tumour_4.0",
-            "Tumour Type_5.0": "Bone and STS Tumour_5.0",
-            "Tumour Type_6.0": "Other Tumour_6.0",
-            "Tumour Type_7.0": "Germ Cell Tumour_7.0",
-            "Tumour Type_8.0": "Breast Tumour_8.0",
-            "Tumour Type_9.0": "Female Genitalia Tumour_9.0",
-            "Tumour Type_10.0": "Lymph Tumour_10.0",
-            "Tumour Type_11.0": "Myeloid Tumour_11.0",
-            "Tumour Type_12.0": "Thyroid Gland Tumour_12.0",
-            "Tumour Type_13.0": "CNS Tumour_13.0",
+            "Tumour Type_2.0": "Tumour Type Head/Neck_2.0",
+            "Tumour Type_3.0": "Tumour Type Digestive_3.0",
+            "Tumour Type_4.0": "Tumour Type Colon and Rectal_4.0",
+            "Tumour Type_5.0": "Tumour Type Bone and STS_5.0",
+            "Tumour Type_6.0": "Tumour Type Other_6.0",
+            "Tumour Type_7.0": "Tumour Type Germ Cell_7.0",
+            "Tumour Type_8.0": "Tumour Type Breast_8.0",
+            "Tumour Type_9.0": "Tumour Type Female Genitalia_9.0",
+            "Tumour Type_10.0": "Tumour Type Lymph_10.0",
+            "Tumour Type_11.0": "Tumour Type Myeloid_11.0",
+            "Tumour Type_12.0": "Tumour Type Thyroid Gland_12.0",
+            "Tumour Type_13.0": "Tumour Type CNS_13.0",
             "Tumour Stage_2.0": "Tumour Stage II_2.0",
             "Tumour Stage_3.0": "Tumour Stage III_3.0",
             "Tumour Stage_4.0": "Tumour Stage IV_4.0",
@@ -159,28 +202,53 @@ class DataPreProcessing:
             "BMI Group_3.0": "BMI Overweight_3.0",
             "BMI Group_4.0": "BMI Obese_4.0", 
         }
+        
+        # Rename encoded columns for better readability
+        self.train_df = self.train_df.rename(columns={col: encoded_cols.get(col, col) for col in self.train_df.columns})
+        print('\n Train Columns Renamed')
+        self.train_df.info()
+        self.test_df = self.test_df.rename(columns={col: encoded_cols.get(col, col) for col in self.test_df.columns})
+        print('\n Test Columns Renamed')
+        self.test_df.info()
 
-        self.df = self.df.rename(columns=encoded_cols)
+        return self.train_df, self.test_df
 
-        self.X = self.df.drop(columns=["Negative Body Image"])
-        print("X INFO")
-        self.X.info()
+    def Train_Test_Split(self):
+        """
+        Split the data into X and y for training and testing.
 
-        self.y = self.df["Negative Body Image"]
-        print("Y INFO")
-        self.y.info()
+        Returns:
+            - X_train (pd.DataFrame): The training data
+            - y_train (pd.Series): The training labels
+            - X_test (pd.DataFrame): The testing data
+            - y_test (pd.Series): The testing labels
+        """
+        # Split the data into X and y
+        self.X_train = self.train_df.drop(columns=["Negative Body Image"])
+        self.y_train = self.train_df["Negative Body Image"]
+        self.X_test = self.test_df.drop(columns=["Negative Body Image"])
+        self.y_test = self.test_df["Negative Body Image"]
 
-        return self.df, self.X, self.y
+        print('X_train shape', self.X_train.shape)
+        print('y_train shape', self.y_train.shape)
+        print('X_test shape', self.X_test.shape)
+        print('y_test shape', self.y_test.shape)
+
+        return self.X_train, self.y_train, self.X_test, self.y_test, 
 
 
 if __name__ == "__main__":
-    df_file_path = input("Provide df file path: ")
-    df = pd.read_csv(df_file_path, delimiter=',', encoding='latin1')
+    train_path = input("Input the training data file path: ")
+    train_df = pd.read_csv(train_path, delimiter=',', encoding='latin1')
     
-    pre_process_data = DataPreProcessing(df)
-    pre_process_data.Rename_Cols(df)
-    pre_process_data.Cat_Encoder(df)
-
+    test_path = input("Input the testing data file path: ")
+    test_df = pd.read_csv(test_path, delimiter=',', encoding='latin1')
+    
+    pre_process_data = DataPreProcessing(train_df, test_df)
+    pre_process_data.Impute_Missing()
+    pre_process_data.Rename_Cols()
+    pre_process_data.Cat_Encoder()
+    pre_process_data.Train_Test_Split()
 
 
 

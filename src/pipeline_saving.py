@@ -1,10 +1,9 @@
 import os 
-import csv
-import sys
+import argparse
 
 from data_pre_processing import DataPreProcessing
 from data_processing import DataProcessing
-from evaluation_metrics import EvaluateModel
+from evaluate_visualize_model import EvaluateModel
 
 import numpy as np
 import pandas as pd
@@ -22,252 +21,268 @@ from PyPDF2 import PdfMerger
 from reportlab.platypus import Paragraph
 from reportlab.lib.styles import getSampleStyleSheet
 
-# save folder
-# save plots
-# PDF for metrics, feature importances, and plots
-
 class FileSave:
-    def __init__(self):
+    """
+    Class to save model performance and evaluation plots and metrics.
+    """
+
+    def __init__(self, architecture, algorithm, test_df):
+        """
+        Create a for loop to iterate through the synthetic data files as training data and using the original data as testing data.
+        Preprocess the data, balance the data, initialize the model, select features, tune the parameters, and evaluate the model.
+        Process the data, evaluate the model, and save the evaluation plots and output attributes to the results folder. 
+
+        Parameters:
+            architecture (str): the architecture used to generate the synthetic data (ctgan, fast_ml, gc).
+            algorithm (str): the algorithm used to model the data (log_reg, rf, mlp).
+            test_df (str): the path to the test data to use for evaluation.
+        """
+
+        self.architecture = architecture
+        self.algorithm = algorithm
+        self.test_df = test_df
+        self.test_df = pd.read_csv(self.test_df, delimiter=',', encoding='latin1')
+        self.test_df = pd.DataFrame(self.test_df.copy())
 
         self.results_folder = None
         self.save_folder = None
-        self.merged_folder = None
-        self.plots_folder = None
-        self.csv_folder = None
+        self.train_merged_folder = None
+        self.train_plots_folder = None
+        self.train_csv_folder = None
+        self.test_merged_folder = None
+        self.test_plots_folder = None
+        self.test_csv_folder = None
+
+        # Initialize the file reader which will be used to read the synthetic data files
         self.file_reader = None
-        
-        # if isinstance(sys.argv[1], str) is False:
-        #     self.model = input("Choose model: ctgan, fast_ml, gc: ")
-        # else:
-        #     self.model = sys.argv[1]
 
-        # if isinstance(sys.argv[2], str) is False:
-        #     self.algorithm = input("Choose algorithm: log_reg, rf, mlp: ")
-        # else:
-        #     self.algorithm = sys.argv[2]
+        # Get synthetic data files
+        self.data_files = [os.path.join(f'/root/{self.architecture}/synthetic_data', file) 
+                           for file in os.listdir(f'/root/{self.architecture}/synthetic_data') if file.endswith('.csv')]
 
-        # for testing purposes
-        self.model = input("Choose model: ctgan, fast_ml, gc: ")
-        self.algorithm = input("Choose algorithm: log_reg, rf, mlp: ")
-
-        self.results_folder = f'/root/{self.model}/results/{self.algorithm}'
-
-        self.data_files = [os.path.join(f'/root/{self.model}/synthetic_data', file) 
-                           for file in os.listdir(f'/root/{self.model}/synthetic_data') if file.endswith('.csv')]
-
+        # For loop to iterate through the synthetic data files as training data and using the original data as testing data to evaluate model performance.
         for file in self.data_files:
-            self.df = pd.read_csv(file, delimiter=',', encoding='latin1')
-            self.df = pd.DataFrame(self.df.copy())
+
+            self.train_df = pd.read_csv(file, delimiter=',', encoding='latin1')
+            self.train_df = pd.DataFrame(self.train_df.copy())
 
             amsterdam_tz = pytz.timezone('Europe/Amsterdam') # Set timezone to Amsterdam
             self.now = datetime.now(amsterdam_tz) # Get the current date and time in Amsterdam timezone
             self.date_time = self.now.strftime("%d%m-%H%M") # Format the date and time as DDMM-HHMM
             self.date = self.now.strftime("%d%m") 
 
+            # SD files have a run number in file name so that number is extracted and used for tracking purposes.
             self.run = '_'.join(file.split('/')[-1].split('_')[0:2])
 
-            self.preprocessing = DataPreProcessing(self.df)
-            self.preprocessing.Rename_Cols(self.df)
-            self.preprocessing.Cat_Encoder(self.df)
-            self.X = self.preprocessing.X
+            self.preprocessing = DataPreProcessing(self.train_df, self.test_df)
+            self.preprocessing.Rename_Cols()
+            self.preprocessing.Cat_Encoder()
 
-            self.processor = DataProcessing(self.df, self.algorithm)
-            self.processor.Smote_Class_Balance()
-            self.processor.Create_Model()
-            self.processor.Feature_Selection()
-            self.processor.Parameter_Tuning()
-            self.processor.Feature_Importance()
-            self.X_ft = self.processor.X_ft
+            self.processed_data = DataProcessing(self.algorithm, self.train_df, self.test_df)
+            self.processed_data.Balance_Smote()
+            self.processed_data.Initialize_Model()
+            self.processed_data.Feature_Selection_Train()
+            self.processed_data.Hyperparameter_Tuning()
+            self.processed_data.Feature_Importance_Opt()
 
-            self.orig_train_size = self.processor.orig_train_size
-            self.class_weight_before_smote = self.processor.class_weight_before_smote
-            self.post_smote_train_size = self.processor.post_smote_train_size
-            self.class_weight_smote = self.processor.class_weight_post_smote
+            self.feature_importance_df = self.processed_data.feature_importance_df
+            self.orig_train_size = self.processed_data.orig_train_size
+            self.class_weight_before_smote = self.processed_data.class_weight_before_smote
+            self.post_smote_train_size = self.processed_data.post_smote_train_size
+            self.class_weight_smote = self.processed_data.class_weight_post_smote
+            self.best_estimator = self.processed_data.best_estimator 
 
-            self.feature_importance = getattr(self.processor, f'feature_importance_{self.algorithm}_df')
-            self.best_estimator = getattr(self.processor, f'best_estimator_{self.algorithm}')
+            self.evaluate_data = EvaluateModel(self.algorithm, self.train_df, self.test_df)  
+            self.evaluate_data.Model_Performance()  
+            self.metrics_train = self.evaluate_data.metrics_train
+            self.metrics_test = self.evaluate_data.metrics_test
 
-            self.evaluator = EvaluateModel(self.df, self.algorithm)
-            self.evaluator.Make_Metrics()
-            self.metrics_ft = self.evaluator.metrics_ft
-
+            # Create folders and save files for model performance evaluation plots and metrics for train and test data.
             self.Create_Folders()
             self.Save_Eval_Plots()
-            self.Output_Attributes()
+            self.Train_Output_Attributes()
+            self.Test_Output_Attributes()
+        
+        print('Pipeline complete.')
 
     
     def Create_Folders(self):
+        """
+        Create or indicate the folder to save the evaluation plots and output attributes to.
 
+        Returns:
+            save_folder (str): an overarching folder for train and test data within the results folder to save the evaluation plots and output attributes for each set of runs.
+            train_merged_folder (str): a folder within save_folder for the merged PDFs containing both the plots and CSVs of training data.
+            train_plots_folder (str): a folder within save_folder for the individual evaluation plots of training data.
+            train_csv_folder (str): a folder within save_folder for the textual output attributes as CSV files of training data.
+            train_merged_folder (str): a folder within save_folder for the merged PDFs containing both the plots and CSVs of testing data.
+            train_plots_folder (str): a folder within save_folder for the individual evaluation plots of testing data.
+            train_csv_folder (str): a folder within save_folder for the textual output attributes as CSV files of testing data.
         """
 
-        Function to create (or locate) a folder to save the evaluation plots and output attributes to.
-
-        Output:
-            - save_folder: a folder within the results folder and with the name of the algorithm 
-                for model performance evaluations.
-            - merged_folder: a folder to save the merged PDFs of the evaluation plots and output attributes.
-            - plots_folder: a folder to save the individual evaluation plots.
-            - csv_folder: a folder to save the output attributes as CSV files.
-
-        """
-        
-        self.save_folder = os.path.join(self.results_folder, f'{self.date}_Outputs') # root > ctgan > results > model > Outputs
+        self.results_folder = f'/root/{self.architecture}/results/{self.algorithm}'
+        self.save_folder = os.path.join(self.results_folder, f'{self.date}_Outputs') # root > {architecture} > results > {algorithm} > Outputs
         
         if len(self.data_files) == 1000:
             for i in range(len(self.data_files)):
-                self.merged_folder = os.path.join(self.save_folder, '1000_runs_Merged_PDFs')
-                self.plots_folder = os.path.join(self.save_folder, '1000_runs_Individual_Plots')
-                self.csv_folder = os.path.join(self.save_folder, '1000_runs_CSVs')
+                self.train_merged_folder = os.path.join(self.save_folder, 'Train_Merged_PDFs_1000_runs')
+                self.train_plots_folder = os.path.join(self.save_folder, 'Train_Individual_Plots_1000_runs_')
+                self.train_csv_folder = os.path.join(self.save_folder, 'Train_CSVs_1000_runs')
+                self.test_merged_folder = os.path.join(self.save_folder, 'Test_Merged_PDFs_1000_runs')
+                self.test_plots_folder = os.path.join(self.save_folder, 'Test_Individual_Plots_1000_runs')
+                self.test_csv_folder = os.path.join(self.save_folder, 'Test_CSVs_1000_runs')
+                
+        # for testing purposes only
         else:
             for i in range(len(self.data_files)):
-                self.merged_folder = os.path.join(self.save_folder, 'X_runs_Merged_PDFs')
-                self.plots_folder = os.path.join(self.save_folder, 'X_runs_Individual_Plots')
-                self.csv_folder = os.path.join(self.save_folder, 'X_runs_CSV')
-
-        # Folder path checks
-        print('save folder:', self.save_folder)
-        print('merged folder:', self.merged_folder)
-        print('plots older:', self.plots_folder)
-        print('csv folder:', self.csv_folder) 
+                self.train_merged_folder = os.path.join(self.save_folder, 'Train_Merged_PDFs_X_runs')
+                self.train_plots_folder = os.path.join(self.save_folder, 'Train_Individual_Plots_X_runs')
+                self.train_csv_folder = os.path.join(self.save_folder, 'Train_CSV_X_runs')
+                self.test_merged_folder = os.path.join(self.save_folder, 'Test_Merged_PDFs_X_runs')
+                self.test_plots_folder = os.path.join(self.save_folder, 'Test_Individual_Plots_X_runs')
+                self.test_csv_folder = os.path.join(self.save_folder, 'Test_CSV_X_runs')
+      
 
         # Check if the folders exist and create them if they do not
-        for folder in [self.save_folder, self.merged_folder, self.plots_folder, self.csv_folder]:
+        for folder in [self.results_folder, self.save_folder, self.train_merged_folder, self.train_plots_folder, self.train_csv_folder, self.test_merged_folder, self.test_plots_folder, self.test_csv_folder]:
             if not os.path.exists(folder):
                 os.makedirs(folder)
                 print(f"Created folder: {folder}")
             else:
                 print(f"Folder already exists: {folder}")
 
-        return self.save_folder, self.merged_folder, self.plots_folder, self.csv_folder
+        # Folder path checks
+        print('Save folder: ', self.save_folder)
+        print('Results folder: ', self.results_folder)
+        print('Train Merged folder: ', self.train_merged_folder)
+        print('Train Plots older: ', self.train_plots_folder)
+        print('Train CSV folder: ', self.train_csv_folder) 
+        print('Test Merged folder: ', self.test_merged_folder)
+        print('Test Plots folder: ', self.test_plots_folder)
+        print('Test CSV folder: ', self.test_csv_folder)
+
+        return self.save_folder, self.results_folder, self.train_merged_folder, self.train_plots_folder, self.train_csv_folder, self.test_merged_folder, self.test_plots_folder, self.test_csv_folder
     
     def Save_Eval_Plots(self):
-
         """
-
-        Function to save the evaluation plots (which have their own '_path') to save_folder.
+        Function to save the training and testing evaluation plots (which have their own '_path' to plots_folder.
 
         Evaluation plots:
-            - Confusion Matrix
-            - Correlation Matrix
-            - ROC Curve
-            - Odds Ratio and Confidence Interval (OR_CI) plot (Logistic Regression only)
-            - Normalized Importance plot (Random Forest and MLP only)
-        
+            - Training Confusion Matrix Plot (plt.figure) 
+            - Training Correlation Matrix Plot (plt.figure)
+            - Training ROC Curve Plot (plt.figure)
+
+            - Testing Confusion Matrix Plot (plt.figure)
+            - Testing Correlation Matrix Plot (plt.figure)
+            - Testing ROC Curve Plot (plt.figure)
+            - Testing Coef Error Plot (plt.figure): Coefficients of optimized model with standard error bar (Logistic Regression only)
         """
 
-        # Save the confusion matrix plot
-        self.Confusion_Matrix_Plot = self.evaluator.Make_Conf()
-        self.conf_mat_path = os.path.join(self.plots_folder, f'{self.date_time}_Confusion_Matrix_Plot_{self.run}_{self.model}.pdf') # Define the path to save the confusion matrix plot
-        
-        if hasattr(self.Confusion_Matrix_Plot, 'savefig'): # Check if the object has a savefig method
-            self.Confusion_Matrix_Plot.savefig(self.conf_mat_path, format='pdf', bbox_inches='tight') 
-            plt.close(self.Confusion_Matrix_Plot)
-            print(f"Confusion matrix plot saved to: {self.conf_mat_path}")
-        else:
-            print("The object returned by Make_Conf() does not have a savefig method.")
+        # Save the Train confusion matrix plot
+        self.evaluate_data.Make_Conf()
+        self.Confusion_Matrix_Plot_Train = self.evaluate_data.Confusion_Matrix_Plot_Train
+        self.conf_mat_path_train = os.path.join(self.train_plots_folder, f'{self.date_time}_Confusion_Matrix_Plot_Train_{self.algorithm}_{self.run}_{self.architecture}.pdf')
+        self.Confusion_Matrix_Plot_Train.savefig(self.conf_mat_path_train, format='pdf', bbox_inches='tight') 
+        plt.close(self.Confusion_Matrix_Plot_Train)
+        print(f"Confusion matrix plot (Train) saved to: {self.conf_mat_path_train}")
 
-        # Save the correlation matrix plot
-        self.Correlation_Plot = self.evaluator.Make_Corr()
-        self.corr_mat_path = os.path.join(self.plots_folder, f'{self.date_time}_Correlation_Matrix_Plot_{self.run}_{self.model}.pdf')
+        # Save the Test confusion matrix plot
+        self.Confusion_Matrix_Plot_Test = self.evaluate_data.Confusion_Matrix_Plot_Test
+        self.conf_mat_path_test = os.path.join(self.test_plots_folder, f'{self.date_time}_Confusion_Matrix_Plot_Test_{self.algorithm}_{self.run}_{self.architecture}.pdf')
+        self.Confusion_Matrix_Plot_Test.savefig(self.conf_mat_path_test, format='pdf', bbox_inches='tight')
+        plt.close(self.Confusion_Matrix_Plot_Test)
+        print(f"Confusion matrix plot (Test) saved to: {self.conf_mat_path_test}")
         
-        if hasattr(self.Correlation_Plot, 'savefig'):
-            self.Correlation_Plot.savefig(self.corr_mat_path, format='pdf', bbox_inches='tight')
-            plt.close(self.Correlation_Plot)
-            print(f"Correlation matrix plot saved to: {self.corr_mat_path}")
-        else:
-            print("The object returned by Make_Corr() does not have a savefig method.")
 
-        # Save the ROC curve plot
-        self.ROC_Curve_Plot = self.evaluator.Make_ROC() 
-        self.roc_curve_path = os.path.join(self.plots_folder, f'{self.date_time}_ROC_Curve_Plot_{self.run}_{self.model}.pdf')
+        # Save the Train correlation matrix plot
+        self.evaluate_data.Make_Corr()
+        self.Correlation_Plot_Train = self.evaluate_data.Correlation_Plot_Train
+        self.corr_mat_path_train = os.path.join(self.train_plots_folder, f'{self.date_time}_Correlation_Matrix_Plot_Train_{self.algorithm}_{self.run}_{self.architecture}.pdf')
+        self.Correlation_Plot_Train.savefig(self.corr_mat_path_train, format='pdf', bbox_inches='tight')
+        plt.close(self.Correlation_Plot_Train)
+        print(f"Correlation matrix plot (Train) saved to: {self.corr_mat_path_train}")
+
+        # Save the Test correlation matrix plot
+        self.Correlation_Plot_Test = self.evaluate_data.Correlation_Plot_Test
+        self.corr_mat_path_test = os.path.join(self.test_plots_folder, f'{self.date_time}_Correlation_Matrix_Plot_Test_{self.algorithm}_{self.run}_{self.architecture}.pdf')
+        self.Correlation_Plot_Test.savefig(self.corr_mat_path_test, format='pdf', bbox_inches='tight')
+        plt.close(self.Correlation_Plot_Test)
+        print(f"Correlation matrix plot (Test) saved to: {self.corr_mat_path_test}")
         
-        if hasattr(self.ROC_Curve_Plot, 'savefig'):
-            self.ROC_Curve_Plot.savefig(self.roc_curve_path, format='pdf', bbox_inches='tight')
-            plt.close(self.ROC_Curve_Plot)
-            print(f"ROC curve plot saved to: {self.roc_curve_path}")
-        else:
-            print("The object returned by Make_ROC() does not have a savefig method.")
+        # Save the Train ROC curve plot
+        self.evaluate_data.Make_ROC()
+        self.Roc_Curve_Plot_Train = self.evaluate_data.Roc_Curve_Plot_Train
+        self.roc_curve_path_train = os.path.join(self.train_plots_folder, f'{self.date_time}_Roc_Curve_Plot_Train_{self.algorithm}_{self.run}_{self.architecture}.pdf')
+        self.Roc_Curve_Plot_Train.savefig(self.roc_curve_path_train, format='pdf', bbox_inches='tight')
+        plt.close(self.Roc_Curve_Plot_Train)
+        print(f"ROC curve plot (Train) saved to: {self.roc_curve_path_train}")
 
-        # Save the odds ratio and confidence interval plot
+        # Save the Test ROC curve plot
+        self.Roc_Curve_Plot_Test = self.evaluate_data.Roc_Curve_Plot_Test
+        self.roc_curve_path_test = os.path.join(self.test_plots_folder, f'{self.date_time}_Roc_Curve_Plot_Test_{self.algorithm}_{self.run}_{self.architecture}.pdf')
+        self.Roc_Curve_Plot_Test.savefig(self.roc_curve_path_test, format='pdf', bbox_inches='tight')
+        plt.close(self.Roc_Curve_Plot_Test)
+        print(f"ROC curve plot (Test) saved to: {self.roc_curve_path_test}")
+        
+        # Save a plot of the coefficients with standard error of the optimal model (only for logistic regression)
+        # Only for test data
         if self.algorithm == 'log_reg':
-            self.OR_CI_Plot = self.evaluator.Make_OR_CI() 
-            self.or_ci_path = os.path.join(self.plots_folder, f'{self.date_time}_OR_CI_Plot_{self.run}_{self.model}.pdf')
-            
-            if hasattr(self.OR_CI_Plot, 'savefig'):
-                self.OR_CI_Plot.savefig(self.or_ci_path, format='pdf', bbox_inches='tight')
-                plt.close(self.OR_CI_Plot)
-                print(f"Odds ratio and confidence interval plot saved to: {self.or_ci_path}")
-            else:
-                print("The object returned by Make_OR_CI() does not have a savefig method.")
-        
-        # Save the normalized importance plot
-        if self.algorithm == 'rf':
-            self.Normalized_Importance_rf_Plot = self.evaluator.Make_Normalized_Importance()
-            self.normalized_importance_rf_path = os.path.join(self.plots_folder, f'{self.date_time}_Normalized_Importance_RF_Plot_{self.run}_{self.model}.pdf')
-            
-            if hasattr(self.Normalized_Importance_rf_Plot, 'savefig'):
-                self.Normalized_Importance_rf_Plot.savefig(self.normalized_importance_rf_path, format='pdf', bbox_inches='tight')
-                plt.close(self.Normalized_Importance_rf_Plot)
-                print(f"Normalized importance plot saved to: {self.normalized_importance_rf_path}")
-            else:
-                print("The object returned by Make_Normalized_Importance() does not have a savefig method.")
+            self.evaluate_data.Make_Coef_Error()
+            self.Coef_Error_Plot = self.evaluate_data.Coef_Error_Plot
+            self.coef_error_path = os.path.join(self.test_plots_folder, f'{self.date_time}_Coef_Error_Plot_{self.algorithm}_{self.run}_{self.architecture}.pdf')
+            self.Coef_Error_Plot.savefig(self.coef_error_path, format='pdf', bbox_inches='tight')
+            plt.close(self.Coef_Error_Plot)
+            print(f"Coef error plot (Test) saved to: {self.coef_error_path}")
 
-        if self.algorithm == 'mlp':
-            self.Normalized_Importance_mlp_Plot = self.evaluator.Make_Normalized_Importance()
-            self.normalized_importance_mlp_path = os.path.join(self.plots_folder, f'{self.date_time}_Normalized_Importance_MLP_Plot_{self.run}_{self.model}.pdf')
-        
-            if hasattr(self.Normalized_Importance_mlp_Plot, 'savefig'):
-                self.Normalized_Importance_mlp_Plot.savefig(self.normalized_importance_mlp_path, format='pdf', bbox_inches='tight')
-                plt.close(self.Normalized_Importance_mlp_Plot)
-                print(f"Normalized importance plot saved to: {self.normalized_importance_mlp_path}")
-            else:
-                print("The object returned by Make_Normalized_Importance() does not have a savefig method.")
     
-    def Output_Attributes(self):
-
+    def Train_Output_Attributes(self):
         """
+        Save the textual (CSV) and plotted output attributes (PDF) of the train model/performance to save_folder 
+        Create a PDF with evaluation plots and save to the train_merged_PDF folder to a train_merged_PDF file.
 
-        Function to save the textual and plotted output attributes of model/performance to save_folder in a merged PDF (and/or csv) file.
-
-        Input:
-            - metric_data_text: textual evaluation data (dict). Also saved to a csv file for ease of access.
-            - feature_data_text: textual selected feature importance data per model (dict). Also saved to a csv file for ease of access.
-            - Plots saved to a temp file and then to merged file and folder.
-
+        Attributes:
+            train_metric_data_text (dict): textual evaluation data of training performance. Also saved to a csv file for ease of access.
+            feature_data_text (dict): textual selected feature importance data (training only) for specified model. Also saved to a csv file for ease of access.
+            Plots saved to a temp file and then to train_merged_folder.
         """
         
         elements = []
 
         # Add a title to the metric PDF
-        title = f"Metrics Report [{self.model}]"
+        title = f"Metrics Report Train [{self.architecture}]"
         elements.append(Paragraph(title, getSampleStyleSheet()['Title']))
 
-        self.metric_data_text = {
-            'Generator Model': self.model,
+        self.train_metric_data_text = {
+            'Generator Model': self.architecture,
             'Date/Time': self.date_time,
             'Algorithm': self.algorithm,
+            'Data Type': 'Train',
             'Run': self.run,
             'Train size before smote': str(self.orig_train_size),
             'Class balance before smote': str(self.class_weight_before_smote),
             'Train size after smote': str(self.post_smote_train_size),
             'Class balance after smote': str(self.class_weight_smote),
-            'Accuracy Score': self.metrics_ft["Accuracy Score"],
-            'Balanced Accuracy Score': self.metrics_ft["Balanced Accuracy Score"],
-            'Precision Score': self.metrics_ft["Precision Score"],
-            'Recall Score': self.metrics_ft["Recall Score"],
-            'F1 Score': self.metrics_ft["F1 Score"],
-            'Log Loss': self.metrics_ft["Log Loss"],
-            'ROC AUC Score': self.metrics_ft["ROC AUC Score"],
-            'Best Estimators': self.best_estimator if self.algorithm in ['log_reg', 'rf'] else "N/A"
+            'Best Estimator': self.best_estimator,
+            'Accuracy Score': self.metrics_train["Accuracy Score (Train)"],
+            'Balanced Accuracy Score': self.metrics_train["Balanced Accuracy Score (Train)"],
+            'Precision Score': self.metrics_train["Precision Score (Train)"],
+            'Recall Score': self.metrics_train["Recall Score (Train)"],
+            'F1 Score': self.metrics_train["F1 Score (Train)"],
+            'Log Loss': self.metrics_train["Log Loss (Train)"],
+            'ROC AUC Score': self.metrics_train["ROC AUC Score (Train)"],
+            'Cross Validation Scores': self.metrics_train["Cross Validation Scores (Train)"],
+            'Cross Validation Mean': self.metrics_train["Cross Validation Mean (Train)"],
+            'Cross Validation Std': self.metrics_train["Cross Validation Std (Train)"],
         }
 
         # Swap columns and rows in the table
-        metric_data = [[key] + [value] for key, value in self.metric_data_text.items()]
+        train_metric_data = [[key] + [value] for key, value in self.train_metric_data_text.items()]
         col_widths = [None, 250]
-        row_heights = [20] * (len(metric_data) - 1) + [40]  # Set last row height to auto
-        metric_table = Table(metric_data, rowHeights=row_heights, colWidths=col_widths)
+        row_heights = [20] * (len(train_metric_data) - 1) + [40]  # Set last row height to auto
+        train_metric_table = Table(train_metric_data, rowHeights=row_heights, colWidths=col_widths)
 
-        metric_table.setStyle(TableStyle([('BACKGROUND', (0, 0), (-1, 0), colors.black),
+        # Indicate table design/layout
+        train_metric_table.setStyle(TableStyle([('BACKGROUND', (0, 0), (-1, 0), colors.black),
               ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
               ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
               ('FONTNAME', (0, 0), (-1, 0), 'Courier-Bold'),
@@ -279,31 +294,20 @@ class FileSave:
               ('BOTTOMPADDING', (0, 0), (-1, -1), 6),\
               ('GRID', (0, 0), (-1, -1), 0.5, colors.black)
               ]))
-        elements.append(metric_table)
+        elements.append(train_metric_table)
         elements.append(PageBreak())
 
-
-        if self.algorithm == 'log_reg':
-            self.feature_data_text = {
-                'Feature': self.feature_importance['Feature'],
-                'Importance': self.feature_importance['Importance'],
-                'Odds Ratio': self.feature_importance['Odds Ratio'],
-                'CI Lower': self.feature_importance['CI Lower'],
-                'CI Upper': self.feature_importance['CI Upper'],
-                'P Value': self.feature_importance['P Value']
-            }
-        elif self.algorithm in ['mlp', 'rf']:
-            self.feature_data_text = {
-                'Feature': self.feature_importance['Feature'],
-                'Importance': self.feature_importance['Importance'],
-                'Normalized Importance': self.feature_importance['Normalized Importance']
-            }
+        self.feature_data_text = {
+            'Feature': self.feature_importance_df['Feature'],
+            'Importance': self.feature_importance_df['Importance'],
+            'Normalized Importance': self.feature_importance_df['Normalized Importance'],
+        }
 
         # Add a title to the feature importance PDF
-        title = f"Feature Importances [{self.model}]"
+        title = f"Feature Importances [{self.architecture}]"
         elements.append(Paragraph(title, getSampleStyleSheet()['Title']))
         
-        # add data_text as a table to the PDF
+        # Add data_text as a table to the PDF
         feature_data = [list(self.feature_data_text.keys())] + list(map(list, zip(*self.feature_data_text.values())))
         feature_table = Table(feature_data)
         feature_table.setStyle(TableStyle([('BACKGROUND', (0, 0), (-1, 0), colors.black),
@@ -321,42 +325,125 @@ class FileSave:
         elements.append(PageBreak())
 
         # Save metric_ and feature_ data_text to a csv file
-        pd.DataFrame([self.metric_data_text]).to_csv(os.path.join(self.csv_folder, f'{self.date_time}_Metrics_{self.run}_{self.model}.csv'), index=False)
-        pd.DataFrame(self.feature_data_text).to_csv(os.path.join(self.csv_folder, f'{self.date_time}_Feature_Importance_{self.run}_{self.model}.csv'), index=False)
+        pd.DataFrame([self.train_metric_data_text]).to_csv(os.path.join(self.train_csv_folder, f'{self.date_time}_Train_Metrics_{self.run}_{self.architecture}.csv'), index=False)
+        pd.DataFrame(self.feature_data_text).to_csv(os.path.join(self.train_csv_folder, f'{self.date_time}_Train_Feature_Importance_{self.run}_{self.architecture}.csv'), index=False)
 
         # Create a temporary PDF file to hold the report content
-        temp_report_pdf_file = os.path.join(self.save_folder, f'{self.date_time}_temp_report_{self.run}.pdf')
-        doc = SimpleDocTemplate(temp_report_pdf_file)
+        temp_report_pdf_file_train = os.path.join(self.save_folder, f'{self.date_time}_train_temp_report_{self.run}.pdf')
+        doc = SimpleDocTemplate(temp_report_pdf_file_train)
         doc.build(elements)
 
         # Merge the PLOT PDFs
         merger = PdfMerger()
-        merger.append(temp_report_pdf_file)
+        merger.append(temp_report_pdf_file_train)
+        merger.append(self.roc_curve_path_train)
+        merger.append(self.conf_mat_path_train)
+        merger.append(self.corr_mat_path_train)
 
-        merger.append(self.roc_curve_path)
-        merger.append(self.conf_mat_path)
-        merger.append(self.corr_mat_path)
-
-        if self.algorithm == 'log_reg':
-            merger.append(self.or_ci_path)
-
-        if self.algorithm == 'rf':
-            merger.append(self.normalized_importance_rf_path)
-
-        if self.algorithm == 'mlp':
-            merger.append(self.normalized_importance_mlp_path)
-
-        merged_pdf_path = os.path.join(self.merged_folder, f'{self.date_time}_Merged_Eval_Report_{self.run}_{self.model}.pdf')
-        merger.write(merged_pdf_path)
+        merged_pdf_path_train = os.path.join(self.train_merged_folder, f'{self.date_time}_Train_Merged_Eval_Report_{self.run}_{self.architecture}.pdf')
+        merger.write(merged_pdf_path_train)
         merger.close()
-        print(f"Merged Evaluations PDF saved to: {merged_pdf_path}")
+        print(f"Merged Evaluations PDF saved to: {merged_pdf_path_train}")
 
         # Remove the temporary report PDF file
-        os.remove(temp_report_pdf_file)
+        os.remove(temp_report_pdf_file_train)
+
+    def Test_Output_Attributes(self):
+        """
+        Save the textual (CSV) and plotted output attributes (PDF) of testing (& optimized) model/performance to save_folder in a merged PDF file.
+        Create a PDF with evaluation plots and save to the train_merged_PDF folder to a test_merged_PDF file.
+              
+        Attributes:
+            test_metric_data_text (dict): textual evaluation data of testing model and perormance. Also saved to a csv file for ease of access.
+            Plots saved to a temp file and then to test_merged_folder as a file.
+        """
+        
+        elements = []
+
+        # Add a title to the metric PDF
+        title = f"Metrics Report Test [{self.architecture}]"
+        elements.append(Paragraph(title, getSampleStyleSheet()['Title']))
+
+        self.test_metric_data_text = {
+            'Generator Model': self.architecture,
+            'Date/Time': self.date_time,
+            'Algorithm': self.algorithm,
+            'Data Type': 'Test',
+            'Run': self.run,
+            'Best Estimator': self.best_estimator,
+            'Accuracy Score': self.metrics_test["Accuracy Score (Test)"],
+            'Balanced Accuracy Score': self.metrics_test["Balanced Accuracy Score (Test)"],
+            'Precision Score': self.metrics_test["Precision Score (Test)"],
+            'Recall Score': self.metrics_test["Recall Score (Test)"],
+            'F1 Score': self.metrics_test["F1 Score (Test)"],
+            'Log Loss': self.metrics_test["Log Loss (Test)"],
+            'ROC AUC Score': self.metrics_test["ROC AUC Score (Test)"],
+            'Cross Validation Scores': self.metrics_test["Cross Validation Scores (Test)"],
+            'Cross Validation Mean': self.metrics_test["Cross Validation Mean (Test)"],
+            'Cross Validation Std': self.metrics_test["Cross Validation Std (Test)"],
+            'Coefs of Opt Model': self.evaluate_data.coefs_opt_model,
+            'Effect Sizes of Opt Model': self.evaluate_data.effect_sizes
+        }
+
+        # Swap columns and rows in the table
+        test_metric_data = [[key] + [value] for key, value in self.test_metric_data_text.items()]
+        col_widths = [None, 250]
+        row_heights = [20] * (len(test_metric_data) - 1) + [40]  # Set last row height to auto
+        test_metric_table = Table(test_metric_data, rowHeights=row_heights, colWidths=col_widths)
+
+        # Indicate table design/layout
+        test_metric_table.setStyle(TableStyle([('BACKGROUND', (0, 0), (-1, 0), colors.black),
+              ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+              ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+              ('FONTNAME', (0, 0), (-1, 0), 'Courier-Bold'),
+              ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+              ('BACKGROUND', (0, 1), (-1, -1), colors.lavender),
+              ('LEFTPADDING', (0, 0), (-1, -1), 6),
+              ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+              ('TOPPADDING', (0, 0), (-1, -1), 6),
+              ('BOTTOMPADDING', (0, 0), (-1, -1), 6),\
+              ('GRID', (0, 0), (-1, -1), 0.5, colors.black)
+              ]))
+        elements.append(test_metric_table)
+        elements.append(PageBreak())
+
+        # Save test metrics text to a csv file
+        pd.DataFrame([self.test_metric_data_text]).to_csv(os.path.join(self.test_csv_folder, f'{self.date_time}_Test_Metrics_{self.run}_{self.architecture}.csv'), index=False)
+
+        # Create a temporary PDF file to hold the report content
+        temp_report_pdf_file_test = os.path.join(self.save_folder, f'{self.date_time}_test_temp_report_{self.run}.pdf')
+        doc = SimpleDocTemplate(temp_report_pdf_file_test)
+        doc.build(elements)
+
+        # Merge the PLOT PDFs
+        merger = PdfMerger()
+        merger.append(temp_report_pdf_file_test)
+        merger.append(self.roc_curve_path_test)
+        merger.append(self.conf_mat_path_test)
+        merger.append(self.corr_mat_path_test)
+
+        if self.algorithm == 'log_reg':
+            merger.append(self.coef_error_path)
+
+        merged_pdf_path_test = os.path.join(self.test_merged_folder, f'{self.date_time}_Test_Merged_Eval_Report_{self.run}_{self.architecture}.pdf')
+        merger.write(merged_pdf_path_test)
+        merger.close()
+        print(f"Merged Evaluations PDF saved to: {merged_pdf_path_test}")
+
+        # Remove the temporary report PDF file
+        os.remove(temp_report_pdf_file_test)
 
 if __name__ == "__main__":
 
-    save_to_file = FileSave()
+    # Create an argument parser for shell script (run.sh) to provide architecture, algorithm, and test_df
+    parser = argparse.ArgumentParser(description='Provide algorithm and architecture.')
+    parser.add_argument('--architecture', choices=['ctgan', 'fast_ml', 'gc'], required=True, help='Architecture to use (ctgan, fast_ml, gc)')
+    parser.add_argument('--algorithm', choices=['log_reg', 'rf', 'mlp'], required=True, help='Algorithm to use (log_reg, rf, mlp)')
+    parser.add_argument('--test_df', required=True, help='Path to test df to use')
+    args = parser.parse_args()
 
-
+    print(f'Architecture: {args.architecture}')
+    print(f'Algorithm: {args.algorithm}')
+    
+    save_to_file = FileSave(architecture=args.architecture, algorithm=args.algorithm, test_df=args.test_df)
 
