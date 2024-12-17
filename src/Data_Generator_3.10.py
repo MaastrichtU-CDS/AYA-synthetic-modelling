@@ -1,10 +1,14 @@
 import os
 import sdv
+from sdv.tabular import GaussianCopula, CTGAN
 import datetime
 import pytz
 
 
 class DataGenerator:
+    """
+    Generate synthetic data using the specified data generator (fast_ml, gc, ctgan, dp-cgan)
+    """
     def __init__ (self):
 
         self.Data_Generators = input("Data Generator (fast_ml, gc, ctgan): ")
@@ -16,7 +20,7 @@ class DataGenerator:
 
         if self.Data_Generators == 'fast_ml':
             self.model_path = '/root/fast_ml/generator/survaya_03062022_clean_n_output_model_FAST_ML.pk1'
-            self.model = sdv.tabular.GaussianCopula.load(self.model_path)
+            self.model = GaussianCopula.load(self.model_path)
             os.makedirs('/root/fast_ml/synthetic_data', exist_ok=True)
         elif self.Data_Generators == 'gc':
             self.model_path = '/root/gc/generator/survaya_03062022_clean_n_output_model_GaussianCopula.pk1'
@@ -24,17 +28,18 @@ class DataGenerator:
             os.makedirs('/root/gc/synthetic_data', exist_ok=True)
         elif self.Data_Generators == 'ctgan':
             self.model_path = '/root/ctgan/generator/survaya_03062022_clean_n_output_model_CTGAN.pk1'
-            self.model = sdv.tabular.CTGAN.load(self.model_path)
+            self.model = CTGAN.load(self.model_path)
             os.makedirs('/root/ctgan/synthetic_data', exist_ok=True)
 
         elif self.Data_Generators == 'dp-cgan':
             # Prevent loading dp-cgans if not specified because of version incompatibility
-            from dp_cgan import load_dp_cgan
+            from sample_dp_cgan import load_dp_cgan
             self.model_path = '/root/dp-cgan/generator/survaya_03062022_clean_n_output_model_DP_CGAN.pk1'
             self.model = load_dp_cgan(self.model_path)
             os.makedirs('/root/dp-cgan/synthetic_data', exist_ok=True)
 
 
+        # Set sample size for the synthetic dataset
         self.sample_size = 3735
 
         for run in range(1, 4): # (, n+1)

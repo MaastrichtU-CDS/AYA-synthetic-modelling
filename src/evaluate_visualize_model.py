@@ -61,7 +61,7 @@ class EvaluateModel:
 
         self.coefs_opt_model = None
         self.effect_sizes = None
-        self.standard_deviation = None
+        self.coefs_stdv = None
         self.se = None
         self.Coef_Error_Plot = None
 
@@ -87,6 +87,7 @@ class EvaluateModel:
             train_cv_scores (np.array): Cross validation scores for training data.
             train_cv_scores_mean (float): Mean of cross validation scores for training data.
             train_cv_scores_std (float): Standard deviation of cross validation scores for training data.
+            
             y_pred_test (np.array): Predicted values for testing data.
             y_proba_test (np.array): Predicted probabilities for testing data.
             metrics_test (dict): Dictionary of testing metrics.
@@ -103,9 +104,9 @@ class EvaluateModel:
         self.y_proba_test = self.opt_model.predict_proba(self.X_test)[:,1]
 
         # Compute Opt Model Training Metrics
-        self.train_cv_scores = cross_val_score(self.opt_model, self.X_train, self.y_train, cv=5, scoring='roc_auc')
-        self.train_cv_scores_mean = np.mean(self.train_cv_scores)
-        self.train_cv_scores_std = np.std(self.train_cv_scores)
+        self.train_cv_scores = np.round(cross_val_score(self.opt_model, self.X_train, self.y_train, cv=5, scoring='roc_auc'), 2)
+        self.train_cv_scores_mean = round(np.mean(self.train_cv_scores), 2)
+        self.train_cv_scores_std = round(np.std(self.train_cv_scores), 2)
 
         ## Dictionary of training metrics
         self.metrics_train = {
@@ -127,9 +128,9 @@ class EvaluateModel:
 
 
         # Compute Opt Model Testing Metrics
-        self.test_cv_scores = cross_val_score(self.opt_model, self.X_test, self.y_test, cv=5, scoring='roc_auc')
-        self.test_cv_scores_mean = np.mean(self.test_cv_scores)
-        self.test_cv_scores_std = np.std(self.test_cv_scores)
+        self.test_cv_scores = np.round(cross_val_score(self.opt_model, self.X_test, self.y_test, cv=5, scoring='roc_auc'), 2)
+        self.test_cv_scores_mean = round(np.mean(self.test_cv_scores), 2)
+        self.test_cv_scores_std = round(np.std(self.test_cv_scores), 2)
         
         ## Dictionary of testing metrics
         self.metrics_test = {
@@ -142,7 +143,7 @@ class EvaluateModel:
             'ROC AUC Score (Test)': round(roc_auc_score(self.y_test, self.y_proba_test), 2),
             'Cross Validation Scores (Test)': self.test_cv_scores,
             'Cross Validation Mean (Test)': self.test_cv_scores_mean,
-            'Cross Validation Std (Test)': self.test_cv_scores_std
+            'Cross Validation Std (Test)': self.test_cv_scores_std,
         }
 
         # Print dictionary of testing metrics
@@ -168,10 +169,11 @@ class EvaluateModel:
             
             # Calculate coefficients
             self.coefs_opt_model = np.sort(self.opt_model.coef_.flatten())
+            self.coef_mean = round(np.mean(self.coefs_opt_model), 2)
 
             # Calculate standard deviation of coefficients
-            self.standard_deviation = np.std(self.coefs_opt_model)
-            print("Standard Deviation of Coefficients: ", self.standard_deviation)
+            self.coefs_stdv = np.std(self.coefs_opt_model)
+            print("Standard Deviation of Coefficients: ", self.coefs_stdv)
 
             # Calculate standard errors using the covariance matrix of the coefficients
             self.se = np.sqrt(np.diag(np.linalg.inv(np.dot(self.X_train.T, self.X_train))))
@@ -192,6 +194,8 @@ class EvaluateModel:
 
             # Calculate effect sizes
             self.effect_sizes = np.abs(self.coefs_opt_model)
+            self.effect_avg = round(np.mean(self.effect_sizes), 2)
+            self.effect_stdv = round(np.std(self.effect_sizes), 2)
 
             self.Coef_Error_Plot, ax_test = plt.subplots(figsize=(10, 10))
             ax_test.errorbar(self.coefs_opt_model, self.X_train.columns,
@@ -203,7 +207,7 @@ class EvaluateModel:
             ax_test.set_title('Coefficients with standard error as Error Bars', fontsize=16)
             plt.show()
 
-            return self.coefs_opt_model, self.Coef_Error_Plot, self.se, self.effect_sizes, self.standard_deviation
+            return self.coefs_opt_model, self.Coef_Error_Plot, self.se, self.effect_sizes, self.coefs_stdv, self.effect_avg, self.coef_mean
         
 
     def Make_Conf(self):

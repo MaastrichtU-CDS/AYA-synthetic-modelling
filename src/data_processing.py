@@ -1,10 +1,7 @@
 from data_pre_processing import DataPreProcessing
 
-import json
-
 import pandas as pd
 import numpy as np
-from scipy import stats
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.neural_network import MLPClassifier
@@ -86,7 +83,7 @@ class DataProcessing:
         print (f'\n Original training data size: {self.orig_train_size}')
 
         # Compute class weights before SMOTE
-        self.class_weight_before_smote = compute_class_weight(class_weight='balanced', classes=np.unique(self.y_train), y=self.y_train)
+        self.class_weight_before_smote = np.round(compute_class_weight(class_weight='balanced', classes=np.unique(self.y_train), y=self.y_train), 2)
 
         # Apply SMOTE to balance the dataset
         self.X_train, self.y_train = SMOTE(random_state=42).fit_resample(self.X_train, self.y_train)
@@ -96,7 +93,7 @@ class DataProcessing:
         print (f'\n Training data size after SMOTE: {self.post_smote_train_size}')
 
         # Compute class weights after SMOTE
-        self.class_weight_post_smote = compute_class_weight(class_weight='balanced', classes=np.unique(self.y_train), y=self.y_train)
+        self.class_weight_post_smote = np.round(compute_class_weight(class_weight='balanced', classes=np.unique(self.y_train), y=self.y_train), 2)
         
         print (f'\n Class weights before SMOTE: {self.class_weight_before_smote}, \n Class weights after SMOTE: {self.class_weight_post_smote}')
 
