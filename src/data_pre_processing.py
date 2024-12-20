@@ -1,10 +1,14 @@
 import pandas as pd
 import numpy as np
+import logging
+import argparse
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.experimental import enable_iterative_imputer
 from sklearn.impute import IterativeImputer
 
+# Configure logging
+logging.basicConfig(filename='/root/log', filemode='a', encoding='utf-8', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class DataPreProcessing: 
     """
@@ -15,13 +19,15 @@ class DataPreProcessing:
         """
         Initializes the DataPreProcessing class with the training and testing data.
             Impute missing values in the test dataframe (test_df).
-            Raname columns for better readability.
-            Encode categorical and binary columns using a OneHotEncoder. Ensures proper reference values are dropped
+            Rename columns for better readability.
+            Encode categorical and binary columns using a OneHotEncoder.
 
         Parameters
-            pd.DataFrame train_df: The synthetic data generated from the original DataFrame
+            pd.DataFrame train_df: The synthetic data generated from the original DataFrame.
             pd.DataFrame test_df: The original data.
         """
+
+        logging.info('\n Initialising DataPreProcessing class')
         
         # A copy of train_df and test_df is made to avoid directly altering the data.
         self.train_df = train_df.copy()
@@ -57,29 +63,25 @@ class DataPreProcessing:
         if isinstance(zero_threshold, float) is False:
             zero_threshold = 0.66
 
-            print(f'Using {zero_threshold} as threshold to zero-impute missing values.')
+        logging.info(f'Using {zero_threshold} as threshold to zero-impute missing values.')
 
-            # retrieve columns with more than threshold proportion of missing values
-            high_missing_variables = [variable_name for variable_name in self.test_df.columns if
-                                    (self.test_df[variable_name].isna().sum() / len(self.test_df[variable_name])) >= zero_threshold]
+        # retrieve columns with more than threshold proportion of missing values
+        high_missing_variables = [variable_name for variable_name in self.test_df.columns if
+                                (self.test_df[variable_name].isna().sum() / len(self.test_df[variable_name])) >= zero_threshold]
 
-            # impute a value of 0 for those with more missing considered desirable
-            self.test_df[high_missing_variables] = self.test_df[high_missing_variables].fillna(0)
+        # impute a value of 0 for those with more missing considered desirable
+        self.test_df[high_missing_variables] = self.test_df[high_missing_variables].fillna(0)
 
-            # initialise the imputation
-            print(f'Imputing using the MICE / Iterative Imputation procedure')
+        # initialise the imputation
+        logging.info(f'Imputing using the MICE / Iterative Imputation procedure')
 
-            # use most frequent to cater for the plethora of categorical variables
-            imputation = IterativeImputer(keep_empty_features=True, initial_strategy='most_frequent')
+        # use most frequent to cater for the plethora of categorical variables
+        imputation = IterativeImputer(keep_empty_features=True, initial_strategy='most_frequent')
 
-            # impute data and convert back to pd.DataFrame
-            self.test_df = pd.DataFrame(imputation.fit_transform(self.test_df), columns=self.test_df.keys())
+        # impute data and convert back to pd.DataFrame
+        self.test_df = pd.DataFrame(imputation.fit_transform(self.test_df), columns=self.test_df.keys())
 
-            # check if there are any missing values left
-            print("Imputation Test")
-            self.test_df.info()
-
-            return self.test_df
+        return self.test_df
 
 
     def Rename_Cols(self):
@@ -103,7 +105,7 @@ class DataPreProcessing:
             "nsurv94dich": "Sexual Attractiveness",
             "Targetnew": "Targeted Therapy",
             "Hormnew": "Hormone Therapy",
-            "RTnew": "Radiation Therapy",
+            "RTnew": "Radiotherapy",
             "chemonew": "Chemotherapy",
             "partner": "Partner",
             "alg_v1b": "Biological Sex",
@@ -118,7 +120,7 @@ class DataPreProcessing:
         self.train_df.rename(columns=columns_to_rename, inplace=True)
         self.test_df.rename(columns=columns_to_rename, inplace=True)
 
-        print('\n Columns Renamed')
+        logging.info('Columns renamed from original data')
 
         return self.train_df, self.test_df
 
@@ -135,7 +137,7 @@ class DataPreProcessing:
             - test_df: The one hot encoded testing dataset
         """
 
-        # Reference values (to be dropped) for categorical and binary columns
+        # Reference values (to be dropped) for categorical and binary columns.
         refs = {
             "Education Level": 3.0,
             "Tumour Type": 1.0,
@@ -147,7 +149,7 @@ class DataPreProcessing:
             "Biological Sex": 0.0,
             "Targeted Therapy": 0.0,
             "Hormone Therapy": 0.0,
-            "Radiation Therapy": 0.0,
+            "Radiotherapy": 0.0,
             "Chemotherapy": 0.0
         }
 
@@ -158,6 +160,8 @@ class DataPreProcessing:
         # Create a OneHotEncoder and drop the reference values
         ohe = OneHotEncoder(drop=refs_to_drop, sparse_output=False, handle_unknown='ignore')
 
+        logging.info('Encoding Categorical and Binary Columns')
+
         # Encode the specified columns
         cat_col_transformer = ColumnTransformer(
             transformers=[
@@ -165,51 +169,53 @@ class DataPreProcessing:
             ], remainder='passthrough'  # Keep other columns unchanged
         )
         
-        # Fit and transform the DataFrame
+        # Fit and transform the train DataFrame
         train_df_transformed = cat_col_transformer.fit_transform(self.train_df)
         ohe_feature_names = cat_col_transformer.named_transformers_['ohe'].get_feature_names_out(ref_cols)
         self.train_df = pd.DataFrame(train_df_transformed, columns=np.concatenate([ohe_feature_names, self.train_df.drop(columns=ref_cols).columns]))
-
+        
+        # Fit and transform the test DataFrame
         test_df_transformed = cat_col_transformer.fit_transform(self.test_df)
         ohe_feature_names = cat_col_transformer.named_transformers_['ohe'].get_feature_names_out(ref_cols)
         self.test_df = pd.DataFrame(test_df_transformed, columns=np.concatenate([ohe_feature_names, self.test_df.drop(columns=ref_cols).columns]))
-        
-        print('\n Data Encoded')
 
         # Dictionary to rename the encoded columns
         encoded_cols = {
-            "Education Level_0.0": "No/Primary Education_1.0",
-            "Education Level_1.0": "Secondary Education_2.0",
-            "Tumour Type_2.0": "Tumour Type Head/Neck_2.0",
-            "Tumour Type_3.0": "Tumour Type Digestive_3.0",
-            "Tumour Type_4.0": "Tumour Type Colon and Rectal_4.0",
-            "Tumour Type_5.0": "Tumour Type Bone and STS_5.0",
-            "Tumour Type_6.0": "Tumour Type Other_6.0",
-            "Tumour Type_7.0": "Tumour Type Germ Cell_7.0",
-            "Tumour Type_8.0": "Tumour Type Breast_8.0",
-            "Tumour Type_9.0": "Tumour Type Female Genitalia_9.0",
-            "Tumour Type_10.0": "Tumour Type Lymph_10.0",
-            "Tumour Type_11.0": "Tumour Type Myeloid_11.0",
-            "Tumour Type_12.0": "Tumour Type Thyroid Gland_12.0",
-            "Tumour Type_13.0": "Tumour Type CNS_13.0",
-            "Tumour Stage_2.0": "Tumour Stage II_2.0",
-            "Tumour Stage_3.0": "Tumour Stage III_3.0",
-            "Tumour Stage_4.0": "Tumour Stage IV_4.0",
-            "Tumour Stage_99.0": "Missing Tumour Data_99",
-            "Time Since Diagnosis_1.0": "TSD >10y_1.0",
-            "Time Since Diagnosis_2.0": "TSD 10-15y_2.0",
-            "BMI Group_2.0": "BMI Underweight_2.0",
-            "BMI Group_3.0": "BMI Overweight_3.0",
-            "BMI Group_4.0": "BMI Obese_4.0", 
+            "Education Level_0.0": "Primary Education",
+            "Education Level_1.0": "Secondary Education",
+            "Tumour Type_2.0": "Head/Neck Tumour",
+            "Tumour Type_3.0": "Digestive Tumour",
+            "Tumour Type_4.0": "Colon and Rectal Tumour",
+            "Tumour Type_5.0": "Bone and Soft Tissue Sarcoma",
+            "Tumour Type_6.0": "Other Tumour",
+            "Tumour Type_7.0": "Germ Cell Tumour",
+            "Tumour Type_8.0": "Breast Tumour",
+            "Tumour Type_9.0": "Female Genitalia Tumour",
+            "Tumour Type_10.0": "Lymphoid Haematological Malignancies",
+            "Tumour Type_11.0": "Myeloid Haematological Malginancies",
+            "Tumour Type_12.0": "Thyroid Gland Tumour",
+            "Tumour Type_13.0": "Central Nervous System Tumour",
+            "Tumour Stage_2.0": "Tumour Stage II",
+            "Tumour Stage_3.0": "Tumour Stage III",
+            "Tumour Stage_4.0": "Tumour Stage IV",
+            "Tumour Stage_99.0": "Missing Tumour Data",
+            "Time Since Diagnosis_1.0": "Time Since Diagnosis (< 10y)",
+            "Time Since Diagnosis_2.0": "Time Since Diagnosis (10-15y)",
+            "BMI Group_2.0": "Underweight",
+            "BMI Group_3.0": "Overweight",
+            "BMI Group_4.0": "Obese", 
+            "Sexual Attractiveness_1.0": "Sexual Attractiveness",
+            "Partner_0.0": "No Partner",
+            "Biological Sex_1.0": "Biological Sex: Female",
+            "Targeted Therapy_1.0": "Targeted Therapy",
+            "Hormone Therapy_1.0": "Hormone Therapy",
+            "Radiotherapy_1.0": "Radiotherapy",
+            "Chemotherapy_1.0": "Chemotherapy"
         }
         
         # Rename encoded columns for better readability
         self.train_df = self.train_df.rename(columns={col: encoded_cols.get(col, col) for col in self.train_df.columns})
-        print('\n Train Columns Renamed')
-        self.train_df.info()
         self.test_df = self.test_df.rename(columns={col: encoded_cols.get(col, col) for col in self.test_df.columns})
-        print('\n Test Columns Renamed')
-        self.test_df.info()
 
         return self.train_df, self.test_df
 
@@ -223,38 +229,30 @@ class DataPreProcessing:
             - X_test (pd.DataFrame): The testing data
             - y_test (pd.Series): The testing labels
         """
+
+        logging.info('Splitting the data into X and y')
+
         # Split the data into X and y
         self.X_train = self.train_df.drop(columns=["Negative Body Image"])
         self.y_train = self.train_df["Negative Body Image"]
         self.X_test = self.test_df.drop(columns=["Negative Body Image"])
         self.y_test = self.test_df["Negative Body Image"]
 
-        print('X_train shape', self.X_train.shape)
-        print('y_train shape', self.y_train.shape)
-        print('X_test shape', self.X_test.shape)
-        print('y_test shape', self.y_test.shape)
-
         return self.X_train, self.y_train, self.X_test, self.y_test, 
 
 
 if __name__ == "__main__":
-    train_path = input("Input the training data file path: ")
-    train_df = pd.read_csv(train_path, delimiter=',', encoding='latin1')
     
-    test_path = input("Input the testing data file path: ")
-    test_df = pd.read_csv(test_path, delimiter=',', encoding='latin1')
-    
-    pre_process_data = DataPreProcessing(train_df, test_df)
+    # Create an argument parser for shell script (run.sh) to provide architecture, algorithm, train_df, and test_df
+    parser = argparse.ArgumentParser(description='Provide algorithm and architecture.')
+    parser.add_argument('--architecture', choices=['ctgan', 'fast_ml', 'gc'], required=True, help='Architecture to use (ctgan, fast_ml, gc)')
+    parser.add_argument('--algorithm', choices=['log_reg', 'rf', 'mlp'], required=True, help='Algorithm to use (log_reg, rf, mlp)')
+    parser.add_argument('--test_df', required=True, help='Path to test df to use')
+    parser.add_argument('--train_df', required=True, help='Path to train df to use')
+    args = parser.parse_args()
+
+    pre_process_data = DataPreProcessing(train_df = args.train_df, test_df = args.test_df)
     pre_process_data.Impute_Missing()
     pre_process_data.Rename_Cols()
     pre_process_data.Cat_Encoder()
     pre_process_data.Train_Test_Split()
-
-
-
-    
-
-
-
-
-

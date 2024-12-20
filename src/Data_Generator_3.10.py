@@ -16,7 +16,6 @@ class DataGenerator:
         amsterdam_tz = pytz.timezone('Europe/Amsterdam') # Set timezone to Amsterdam
         self.now = datetime.datetime.now(amsterdam_tz) # Get the current date and time in Amsterdam timezone
         self.date = self.now.strftime("%d%m") # Format the date and time as DDMM-HHMM
-        print(self.date)
 
         if self.Data_Generators == 'fast_ml':
             self.model_path = '/root/fast_ml/generator/survaya_03062022_clean_n_output_model_FAST_ML.pk1'
@@ -30,19 +29,18 @@ class DataGenerator:
             self.model_path = '/root/ctgan/generator/survaya_03062022_clean_n_output_model_CTGAN.pk1'
             self.model = CTGAN.load(self.model_path)
             os.makedirs('/root/ctgan/synthetic_data', exist_ok=True)
-
-        elif self.Data_Generators == 'dp-cgan':
-            # Prevent loading dp-cgans if not specified because of version incompatibility
-            from sample_dp_cgan import load_dp_cgan
-            self.model_path = '/root/dp-cgan/generator/survaya_03062022_clean_n_output_model_DP_CGAN.pk1'
-            self.model = load_dp_cgan(self.model_path)
-            os.makedirs('/root/dp-cgan/synthetic_data', exist_ok=True)
+        # elif self.Data_Generators == 'dp-cgan':
+        #     # Prevent loading dp-cgans if not specified because of version incompatibility
+        #     from sample_dp_cgan import load_dp_cgan
+        #     self.model_path = '/root/dp-cgan/generator/survaya_03062022_clean_n_output_model_DP_CGAN.pk1'
+        #     self.model = load_dp_cgan(self.model_path)
+        #     os.makedirs('/root/dp-cgan/synthetic_data', exist_ok=True)
 
 
         # Set sample size for the synthetic dataset
         self.sample_size = 3735
 
-        for run in range(1, 4): # (, n+1)
+        for run in range(1, 1001): # (, n+1)
             self.samples = self.model.sample(self.sample_size)
 
             if self.Data_Generators == 'fast_ml':
@@ -57,10 +55,10 @@ class DataGenerator:
                 self.output_csv_path =f'/root/ctgan/synthetic_data/run_{run}_{self.date}_CTGAN_{self.sample_size}_samples.csv'
                 self.samples.to_csv(self.output_csv_path, index=False)
                 print(f"Generated samples saved to {self.output_csv_path}")
-            elif self.Data_Generators == 'dp-cgan':
-                self.output_csv_path =f'/root/dp-cgan/synthetic_data/run_{run}_{self.date}_DP_CGAN_{self.sample_size}_samples.csv'
-                self.samples.to_csv(self.output_csv_path, index=False)
-                print(f"Generated samples saved to {self.output_csv_path}")
+            # elif self.Data_Generators == 'dp-cgan':
+            #     self.output_csv_path =f'/root/dp-cgan/synthetic_data/run_{run}_{self.date}_DP_CGAN_{self.sample_size}_samples.csv'
+            #     self.samples.to_csv(self.output_csv_path, index=False)
+            #     print(f"Generated samples saved to {self.output_csv_path}")
 
 
 if __name__ == "__main__":

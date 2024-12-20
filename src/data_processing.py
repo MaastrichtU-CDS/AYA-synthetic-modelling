@@ -1,5 +1,7 @@
 from data_pre_processing import DataPreProcessing
 
+import logging
+import argparse
 import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
@@ -10,6 +12,9 @@ from sklearn.feature_selection import SelectFromModel
 from sklearn.utils.class_weight import compute_class_weight
 from imblearn.over_sampling import SMOTE
 from sklearn.inspection import permutation_importance
+
+# Configure logging
+logging.basicConfig(filename='/root/log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class DataProcessing:
     """
@@ -30,6 +35,8 @@ class DataProcessing:
             train_df (pd.DataFrame): The training dataset.
             test_df (pd.DataFrame): The testing dataset.
         """
+
+        logging.info('\n Initializing DataProcessing class.')
 
         self.algorithm = algorithm
         self.train_df = train_df.copy()
@@ -80,23 +87,24 @@ class DataProcessing:
 
         # Get train size before smote
         self.orig_train_size = self.X_train.shape
-        print (f'\n Original training data size: {self.orig_train_size}')
 
         # Compute class weights before SMOTE
         self.class_weight_before_smote = np.round(compute_class_weight(class_weight='balanced', classes=np.unique(self.y_train), y=self.y_train), 2)
 
+        logging.info('Applying SMOTE to balance the dataset.')
+        
         # Apply SMOTE to balance the dataset
         self.X_train, self.y_train = SMOTE(random_state=42).fit_resample(self.X_train, self.y_train)
-        
+
         # Get train size after smote
         self.post_smote_train_size = self.X_train.shape
-        print (f'\n Training data size after SMOTE: {self.post_smote_train_size}')
-
+       
         # Compute class weights after SMOTE
         self.class_weight_post_smote = np.round(compute_class_weight(class_weight='balanced', classes=np.unique(self.y_train), y=self.y_train), 2)
         
-        print (f'\n Class weights before SMOTE: {self.class_weight_before_smote}, \n Class weights after SMOTE: {self.class_weight_post_smote}')
-
+        logging.info(f'Dataset size before {self.orig_train_size}, Dataset size after {self.post_smote_train_size}. '
+                     f'Class weights before {self.class_weight_before_smote}, Class weights after {self.class_weight_post_smote}')
+        
         return self.X_train, self.y_train, self.class_weight_before_smote, self.class_weight_post_smote, self.orig_train_size, self.post_smote_train_size
     
 
@@ -110,21 +118,24 @@ class DataProcessing:
         """
 
         # Elastic Net Logistic Regression (log_reg)
-        # Initialized with standard elastic net parameters (l1_ratio=0.5, C=0.1)
         if self.algorithm == 'log_reg':
-            self.train_model = LogisticRegression(penalty='elasticnet', solver ='saga', l1_ratio=0.5, C = 0.1, max_iter=1500, random_state=42)    
+            self.train_model = LogisticRegression(penalty='elasticnet', solver ='saga', l1_ratio=0.5, C = 0.1, max_iter=2000, random_state=42)    
+            logging.info('Initialized logistic regression (log_reg) with standard elastic net parameters (l1_ratio=0.5, C=0.1). Max iterations set to 2000.')
+            logging.captureWarnings(True)
 
         # Random Forest Classifier (rf)
         if self.algorithm == 'rf':
             self.train_model = RandomForestClassifier(random_state=42) 
+            logging.info('Initialized random forest classifier (rf) with standard parameters and random state=42')
 
         # Multi-layer Perceptron Classifier (mlp)
-        # Initialized with the logistic activation function for binary classification.
         if self.algorithm == 'mlp':
             self.train_model = MLPClassifier(shuffle=True, activation='logistic', random_state=42, max_iter=1000)
-        
+            logging.info('Initialized multi-layer perceptron (mlp) classifier with the logistic activation function for binary classification')
+
         # Fit the model on the training data
         self.train_model.fit(self.X_train, self.y_train)
+        logging.info(f'Model fitted on training data.')
 
         return self.train_model
     
@@ -145,13 +156,14 @@ class DataProcessing:
             selected_features (pd.Index): The names of the selected features
         """ 
 
+        logging.info('Selecting features based on internal feature importance methods for each fitted model.')
+
         if self.algorithm=="log_reg": 
             self.feature_selector = SelectFromModel(estimator = self.train_model).fit(self.X_train, self.y_train)
             self.selected_features_mask = self.feature_selector.get_support()
             self.selected_features = self.X_train.columns[self.selected_features_mask]
             self.X_train = pd.DataFrame(self.feature_selector.transform(self.X_train), columns=self.selected_features)
-            print("\n See selected features in X_train [log_reg]: \n ")
-            self.X_train.info()
+            logging.info(f"See selected features in X_train [logistic regression]: {self.X_train.columns} ")
 
         if self.algorithm=="rf":
             self.feature_selector = self.train_model.feature_importances_
@@ -159,8 +171,7 @@ class DataProcessing:
             self.selected_features_mask = self.feature_selector >= self.threshold
             self.selected_features = self.X_train.columns[self.selected_features_mask]
             self.X_train = pd.DataFrame(self.X_train.loc[:, self.selected_features])
-            print("\n See selected features in X_train [rf]: \n ")
-            self.X_train.info()
+            logging.info(f"See selected features in X_train [random forest]: {self.X_train.columns} ")
         
         if self.algorithm=="mlp":
             self.feature_selector = permutation_importance(self.train_model, self.X_train, self.y_train, random_state=42, scoring='accuracy') 
@@ -169,8 +180,7 @@ class DataProcessing:
             self.selected_features_mask = self.feature_selector_mean >= self.threshold
             self.selected_features = self.X_train.columns[self.selected_features_mask]
             self.X_train = pd.DataFrame(self.X_train.loc[:, self.selected_features])
-            print("\n See selected features in X_train [mlp]: \n ")
-            self.X_train.info()
+            logging.info(f"See selected features in X_train [multi-layer perceptron classifier]: {self.X_train.columns} ")
 
         # Ensure test data has same features as training data
         self.X_test = self.X_test[self.X_train.columns]
@@ -197,6 +207,8 @@ class DataProcessing:
         scoring_metrics = ['accuracy', 'precision', 'recall', 'f1', 'roc_auc']
         scoring_metrics_dict = {metric: metric for metric in scoring_metrics}
 
+        logging.info('Tuning hyperparameters and refitting model based on training data to create an optimized model (opt_model).')
+        logging.info(f'Scoring metrics used in hyperparameter tuning: {scoring_metrics}')
         # Hyperparameter tuning for log_reg
         if self.algorithm == 'log_reg':
             self.param_grid= {
@@ -213,14 +225,13 @@ class DataProcessing:
             grid_search.fit(self.X_train, self.y_train) 
 
             self.best_params = grid_search.best_params_ 
-            print("\n Best params found [log_reg]: ", self.best_params)
+            logging.info(f'Best params found [logistic regression]: {self.best_params}')
             self.best_estimator = grid_search.best_estimator_ 
-            print("\n Best estimator found [log_reg]: ", self.best_estimator)
+            logging.info(f'Best estimator found [logistic regression]: {self.best_estimator}')
         
             # Refit model using best params
             self.opt_model = LogisticRegression(penalty='elasticnet', solver='saga', random_state=42, **self.best_params).fit(self.X_train, self.y_train)
-            print("\n Done refitting log_reg with best estimator")
-
+            logging.info('Refitted logistic regression with best params.')
 
         # Hyperparameter tuning for rf
         if self.algorithm == 'rf':
@@ -240,14 +251,13 @@ class DataProcessing:
             grid_search.fit(self.X_train, self.y_train)
 
             self.best_params = grid_search.best_params_
-            print("\n Best params found [rf]: ", self.best_params)
+            logging.info(f'Best params found [random forest]: {self.best_params}')
             self.best_estimator = grid_search.best_estimator_
-            print("\n Best estimator found [rf]: ", self.best_estimator)
+            logging.info(f'Best estimator found [random forest]: {self.best_estimator}')
 
-            
             # Refit model using best params
             self.opt_model = RandomForestClassifier(**self.best_params, random_state=42).fit(self.X_train, self.y_train)
-            print("\n Done refitting rf with best estimator")
+            logging.info('Refitted random forest with best params.')
 
         # Hyperparameter tuning for mlp
         if self.algorithm == 'mlp':
@@ -265,13 +275,13 @@ class DataProcessing:
             grid_search.fit(self.X_train, self.y_train)
         
             self.best_params = grid_search.best_params_
-            print("\n Best params found [mlp]: ", self.best_params)
+            logging.info(f'Best params found [multi-layer perceptron classifier]: {self.best_params}')
             self.best_estimator = grid_search.best_estimator_
-            print("\n Best estimator found [mlp]: ", self.best_estimator)
+            logging.info(f'Best estimator found [multi-layer perceptron classifier]: {self.best_estimator}')
 
             # Refit model using best params 
             self.opt_model = MLPClassifier(**self.best_params, shuffle = True, activation='logistic', random_state=42, max_iter=1000).fit(self.X_train, self.y_train)
-            print("\n Done refitting mlp with best estimator")
+            logging.info('Refitted multi-layer perceptron classifier with best params.')
 
         return self.opt_model, self.best_estimator, self.best_params, self.param_grid
 
@@ -288,13 +298,13 @@ class DataProcessing:
         if self.algorithm == 'log_reg':
             self.importance_scores = pd.Series(self.opt_model.coef_.flatten(), index=self.selected_features)
             self.normalized_importance = self.importance_scores / np.sum(self.importance_scores)
-            print("\n Feature importance for log_reg: ")
+            logging.info('Computed feature importance for logistic regression.')
 
         # Compute feature importance scores for random forest optimized model with built in feature_importances_
         if self.algorithm == 'rf':
             self.importance_scores = self.opt_model.feature_importances_
             self.normalized_importance = self.importance_scores / np.sum(self.importance_scores)
-            print("\n Feature importance for rf: ")
+            logging.info('Computed feature importance for random forest.')
 
         # Compute feature importance scores for multi-layer perceptron classifier optimized model with permutation_importance
         if self.algorithm == 'mlp':
@@ -302,7 +312,7 @@ class DataProcessing:
             self.importance_scores_mean = np.array(self.importance_scores.importances_mean)
             self.selected_features = self.X_train.columns
             self.normalized_importance = self.importance_scores_mean / np.sum(self.importance_scores_mean)
-            print("\n Feature importance for mlp: ")
+            logging.info('Computed feature importance for multi-layer perceptron classifier.')
 
         # Create a DataFrame of feature importances, coefficients, odds ratios, p-values, and CIs
         self.feature_importance_df = pd.DataFrame({
@@ -310,20 +320,22 @@ class DataProcessing:
             'Importance': self.importance_scores.values.round(2), 
             'Normalized Importance': self.normalized_importance.round(2),
         }).sort_values(by='Importance', ascending=False)
-        print(self.feature_importance_df)
+        logging.info('Created feature importance dataframe for relevant algorithm and thus optimized model.')
 
         return self.importance_scores, self.normalized_importance, self.feature_importance_df
    
 
 if __name__ == "__main__":
-
-    algorithm = input("Provide algorithm (log_reg, rf, mlp): ")
-    train_path = input("Input the training data file path: ")
-    train_df = pd.read_csv(train_path, delimiter=',', encoding='latin1')
-    test_path = input("Input the testing data file path: ")
-    test_df = pd.read_csv(test_path, delimiter=',', encoding='latin1')
     
-    post_process_data = DataProcessing(algorithm, train_df, test_df)
+    # Create an argument parser for shell script (run.sh) to provide architecture, algorithm, train_df, and test_df
+    parser = argparse.ArgumentParser(description='Provide algorithm and architecture.')
+    parser.add_argument('--architecture', choices=['ctgan', 'fast_ml', 'gc'], required=True, help='Architecture to use (ctgan, fast_ml, gc)')
+    parser.add_argument('--algorithm', choices=['log_reg', 'rf', 'mlp'], required=True, help='Algorithm to use (log_reg, rf, mlp)')
+    parser.add_argument('--test_df', required=True, help='Path to test df to use')
+    parser.add_argument('--train_df', required=True, help='Path to train df to use')
+    args = parser.parse_args()
+    
+    post_process_data = DataProcessing(algorithm = args.algorithm, train_df=args.train_df, test_df=args.test_df)
     post_process_data.Balance_Smote()
     post_process_data.Initialize_Model()
     post_process_data.Feature_Selection_Train()
