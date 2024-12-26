@@ -282,7 +282,7 @@ class DataProcessing:
             # Refit model using best params 
             self.opt_model = MLPClassifier(**self.best_params, shuffle = True, activation='logistic', random_state=42, max_iter=1000).fit(self.X_train, self.y_train)
             logging.info('Refitted multi-layer perceptron classifier with best params.')
-
+        
         return self.opt_model, self.best_estimator, self.best_params, self.param_grid
 
 
@@ -302,13 +302,13 @@ class DataProcessing:
 
         # Compute feature importance scores for random forest optimized model with built in feature_importances_
         if self.algorithm == 'rf':
-            self.importance_scores = self.opt_model.feature_importances_
+            self.importance_scores = pd.Series(self.opt_model.feature_importances_, index=self.selected_features)
             self.normalized_importance = self.importance_scores / np.sum(self.importance_scores)
             logging.info('Computed feature importance for random forest.')
 
         # Compute feature importance scores for multi-layer perceptron classifier optimized model with permutation_importance
         if self.algorithm == 'mlp':
-            self.importance_scores = permutation_importance(self.opt_model, self.X_train, self.y_train, random_state=42)
+            self.importance_scores = pd.Series(permutation_importance(self.opt_model, self.X_train, self.y_train, random_state=42).importances_mean, index=self.selected_features)
             self.importance_scores_mean = np.array(self.importance_scores.importances_mean)
             self.selected_features = self.X_train.columns
             self.normalized_importance = self.importance_scores_mean / np.sum(self.importance_scores_mean)
@@ -321,6 +321,7 @@ class DataProcessing:
             'Normalized Importance': self.normalized_importance.round(2),
         }).sort_values(by='Importance', ascending=False)
         logging.info('Created feature importance dataframe for relevant algorithm and thus optimized model.')
+        logging.info('n\ Data Processing complete.')
 
         return self.importance_scores, self.normalized_importance, self.feature_importance_df
    
@@ -328,14 +329,21 @@ class DataProcessing:
 if __name__ == "__main__":
     
     # Create an argument parser for shell script (run.sh) to provide architecture, algorithm, train_df, and test_df
-    parser = argparse.ArgumentParser(description='Provide algorithm and architecture.')
-    parser.add_argument('--architecture', choices=['ctgan', 'fast_ml', 'gc'], required=True, help='Architecture to use (ctgan, fast_ml, gc)')
-    parser.add_argument('--algorithm', choices=['log_reg', 'rf', 'mlp'], required=True, help='Algorithm to use (log_reg, rf, mlp)')
-    parser.add_argument('--test_df', required=True, help='Path to test df to use')
-    parser.add_argument('--train_df', required=True, help='Path to train df to use')
-    args = parser.parse_args()
+    # parser = argparse.ArgumentParser(description='Provide algorithm and architecture.')
+    # parser.add_argument('--architecture', choices=['ctgan', 'fast_ml', 'gc'], required=True, help='Architecture to use (ctgan, fast_ml, gc)')
+    # parser.add_argument('--algorithm', choices=['log_reg', 'rf', 'mlp'], required=True, help='Algorithm to use (log_reg, rf, mlp)')
+    # parser.add_argument('--test_df', required=True, help='Path to test df to use')
+    # parser.add_argument('--train_df', required=True, help='Path to train df to use')
+    # args = parser.parse_args()
     
-    post_process_data = DataProcessing(algorithm = args.algorithm, train_df=args.train_df, test_df=args.test_df)
+    # post_process_data = DataProcessing(algorithm = args.algorithm, train_df=args.train_df, test_df=args.test_df)
+
+    algorithm = 'rf'
+    train_df = pd.read_csv("/root/ctgan/synthetic_data/run_4_2012_CTGAN_3735_samples.csv")
+    test_df = pd.read_csv("/root/.original_data/survaya_03062022_clean.csv")
+
+    post_process_data = DataProcessing(algorithm, train_df, test_df)
+
     post_process_data.Balance_Smote()
     post_process_data.Initialize_Model()
     post_process_data.Feature_Selection_Train()
