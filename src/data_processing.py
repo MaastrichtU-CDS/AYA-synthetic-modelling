@@ -329,16 +329,14 @@ class DataProcessing:
 if __name__ == "__main__":
     
     # Create an argument parser for shell script (run.sh) to provide architecture, algorithm, train_df, and test_df
-    # parser = argparse.ArgumentParser(description='Provide algorithm and architecture.')
-    # parser.add_argument('--architecture', choices=['ctgan', 'fast_ml', 'gc'], required=True, help='Architecture to use (ctgan, fast_ml, gc)')
-    # parser.add_argument('--algorithm', choices=['log_reg', 'rf', 'mlp'], required=True, help='Algorithm to use (log_reg, rf, mlp)')
-    # parser.add_argument('--test_df', required=True, help='Path to test df to use')
-    # parser.add_argument('--train_df', required=True, help='Path to train df to use')
-    # args = parser.parse_args()
+    parser = argparse.ArgumentParser(description='Provide algorithm and architecture.')
+    parser.add_argument('--architecture', choices=['ctgan', 'fast_ml', 'gc'], required=True, help='Architecture to use (ctgan, fast_ml, gc)')
+    parser.add_argument('--algorithm', choices=['log_reg', 'rf', 'mlp'], required=True, help='Algorithm to use (log_reg, rf, mlp)')
+    parser.add_argument('--test_df', required=True, help='Path to test df to use')
+    parser.add_argument('--train_df', required=True, help='Path to train df to use')
+    args = parser.parse_args()
     
-    # post_process_data = DataProcessing(algorithm = args.algorithm, train_df=args.train_df, test_df=args.test_df)
-
-    post_process_data = DataProcessing(algorithm='rf', train_df=pd.read_csv(input('Enter path to train_df: ')), test_df=pd.read_csv(input('Enter path to test_df: ')))
+    post_process_data = DataProcessing(algorithm = args.algorithm, train_df=args.train_df, test_df=args.test_df)
 
     post_process_data.Balance_Smote()
     post_process_data.Initialize_Model()
