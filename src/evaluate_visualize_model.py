@@ -384,6 +384,8 @@ class EvaluateModel:
         ax_test.grid(False)
         plt.show()
 
+        logging.info('Evaluations complete.')
+
         return self.Roc_Curve_Plot_Train, self.Roc_Curve_Plot_Test
 
 if __name__ == "__main__":

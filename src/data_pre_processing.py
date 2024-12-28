@@ -238,6 +238,8 @@ class DataPreProcessing:
         self.X_test = self.test_df.drop(columns=["Negative Body Image"])
         self.y_test = self.test_df["Negative Body Image"]
 
+        logging.info('Data pre-processing complete')
+
         return self.X_train, self.y_train, self.X_test, self.y_test, 
 
 
