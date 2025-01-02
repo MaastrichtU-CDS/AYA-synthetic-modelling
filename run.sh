@@ -20,15 +20,15 @@ while [[ "$#" -gt 0 ]]; do
 done
 
 if [ -z "$architecture" ] || [ -z "$algorithm" ] || [ -z "$test_df" ]; then
-    read -p "Enter the architecture (ctgan, fast_ml, or gc): " architecture
+    read -p "Enter the architecture (ctgan, fast_ml, gc, or dp_cgan): " architecture
     read -p "Enter the algorithm (log_reg, rf, mlp): " algorithm
     read -p "Enter the test data: " test_df
     read -p "Enter the train data: " train_df
 fi
 
 # Validate the inputs
-if [[ ! "$architecture" =~ ^(ctgan|fast_ml|gc)$ ]]; then
-    echo "Invalid architecture: $architecture. Choose from ctgan, fast_ml, or gc."
+if [[ ! "$architecture" =~ ^(ctgan|fast_ml|gc|dp_cgan)$ ]]; then
+    echo "Invalid architecture: $architecture. Choose from ctgan, fast_ml, gc, or dp_cgan."
     exit 1
 fi
 
