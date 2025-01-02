@@ -457,7 +457,7 @@ if __name__ == "__main__":
 
     # Create an argument parser for shell script (run.sh) to provide architecture, algorithm, train_df, and test_df
     parser = argparse.ArgumentParser(description='Provide algorithm and architecture.')
-    parser.add_argument('--architecture', choices=['ctgan', 'fast_ml', 'gc'], required=True, help='Architecture to use (ctgan, fast_ml, gc)')
+    parser.add_argument('--architecture', choices=['ctgan', 'fast_ml', 'gc', 'dp_cgan'], required=True, help='Architecture to use (ctgan, fast_ml, gc, dp_cgan)')
     parser.add_argument('--algorithm', choices=['log_reg', 'rf', 'mlp'], required=True, help='Algorithm to use (log_reg, rf, mlp)')
     parser.add_argument('--test_df', required=True, help='Path to test df to use')
     parser.add_argument('--train_df', required=False, help='Path to train df to use')
