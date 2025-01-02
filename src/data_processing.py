@@ -308,10 +308,9 @@ class DataProcessing:
 
         # Compute feature importance scores for multi-layer perceptron classifier optimized model with permutation_importance
         if self.algorithm == 'mlp':
-            self.importance_scores = pd.Series(permutation_importance(self.opt_model, self.X_train, self.y_train, random_state=42).importances_mean, index=self.selected_features)
-            self.importance_scores_mean = np.array(self.importance_scores.importances_mean)
-            self.selected_features = self.X_train.columns
-            self.normalized_importance = self.importance_scores_mean / np.sum(self.importance_scores_mean)
+            perm_importance = permutation_importance(self.opt_model, self.X_train, self.y_train, random_state=42)
+            self.importance_scores = pd.Series(perm_importance.importances_mean, index=self.selected_features)
+            self.normalized_importance = self.importance_scores / np.sum(self.importance_scores)
             logging.info('Computed feature importance for multi-layer perceptron classifier.')
 
         # Create a DataFrame of feature importances, coefficients, odds ratios, p-values, and CIs
