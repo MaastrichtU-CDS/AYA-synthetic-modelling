@@ -2,7 +2,6 @@ import csv
 import os
 import pandas as pd
 import numpy as np
-# from pipeline_saving import FileSave
 import matplotlib.pyplot as plt
 import seaborn as sns
 
@@ -12,131 +11,137 @@ import pytz
 class Compare_CSVs:
     def __init__(self, architecture='ctgan', algorithm='log_reg'):
 
-        amsterdam_tz = pytz.timezone('Europe/Amsterdam') # Set timezone to Amsterdam
-        self.now = datetime.now(amsterdam_tz) # Get the current date and time in Amsterdam timezone
-        self.date_time = self.now.strftime("%d%m-%H%M") # Format the date and time as DDMM-HHMM
-        self.date = self.now.strftime("%d%m") 
-
         self.architecture = architecture
         self.algorithm = algorithm
 
-        # FIXME: change for 1000 runs
-
         # Find the folder with 'Outputs' in its name
-        base_folder = f'/root/{self.architecture}/results/{self.algorithm}/pipeline_run/Outputs' # change to: pipeline_run folder
+        base_folder = f'/root/{self.architecture}/results/{self.algorithm}/pipeline_run/Outputs'
         
-        self.test_csv_folder = os.path.join(base_folder, 'Test_X_runs/Test_CSVs')
-        self.train_csv_folder = os.path.join(base_folder, 'Train_X_runs/Train_CSVs')
+        self.test_csv_folder = os.path.join(base_folder, 'Test_1000_runs/Test_CSVs')
+        self.train_csv_folder = os.path.join(base_folder, 'Train_1000_runs/Train_CSVs')
         
         # Initialize the combined metrics vars for train and test as DataFrames
-        self.train_combined_metrics = pd.DataFrame()
-        self.test_combined_metrics = pd.DataFrame()
+        self.train_metric_indices = []
+        self.test_metric_indices = []
+
+        self.all_metric_names = pd.DataFrame()
+        self.all_metric_values = pd.DataFrame()
+
+        self.metric_indices = []
+        self.metric_names = []
          
-    def Train_Metrics(self):
+    def Metrics_Calculations(self, train_test):
         ''' 
         Combine metrics of the train (model performance) CSV files for data aggregation.
         '''
 
-        self.train_csv_metrics_files = [os.path.join(self.train_csv_folder, file) 
-                 for file in os.listdir(self.train_csv_folder) if 'Metrics_run' in file]
+        csv_metrics_files = [os.path.join(getattr(self, f'{train_test}_csv_folder'), file) 
+                 for file in os.listdir(getattr(self, f'{train_test}_csv_folder')) if 'Metrics_run' in file]
         
-        train_metric_names = []
-        train_metric_values = []
+        metric_names = []
+        metric_values = []
   
-        for file in self.train_csv_metrics_files:
+        for file in csv_metrics_files:
             
             f = open(file, newline='')
-            self.file_reader = list(csv.reader(f, dialect='excel'))
+            file_reader = list(csv.reader(f, dialect='excel'))
             f.close()
-            self.file_reader = pd.DataFrame(self.file_reader)
+            file_reader = pd.DataFrame(file_reader)
 
-            train_metric_values.append(self.file_reader.iloc[1,:]) # Get the metric values from the second row of csv file
+            metric_values.append(file_reader.iloc[1,:]) # Get the metric values from the second row of csv file
+            
+            #split file name into parts and get the run name
+            run_name = '_'.join(file.split('_')[7:9])
 
-        train_metric_names.append(self.file_reader.iloc[0,:]) # Get the metric names from the first row of csv file       
+            # FIXME: Make run name idx
+
+            # self.file_reader.columns[] = [run_name]
+            # print(self.file_reader)
+
+        metric_names.append(file_reader.iloc[0,:]) # Get the metric names from the first row of csv file       
         
         # combine metric names and values into a single dataframe
-        train_con_met_names = pd.concat(train_metric_names, axis=0).reset_index(drop=True) 
-        train_con_met_values = pd.concat(train_metric_values, axis=1).reset_index(drop=True) 
+        self.all_metric_names = pd.concat(metric_names, axis=0).reset_index(drop=True) 
+        self.all_metric_values = pd.concat(metric_values, axis=1).reset_index(drop=True)
+  
+        #FIXME: perhaps take out cv scores and just keep mean and std; would be nice to have mean and stdv appended with mean and stdv cols instead of as rows.
 
-        # metrics_indices = [10, 11, 12, 13, 14, 15]
-        # train_means = []
-        # train_stds = []
-        # for i in metrics_indices:
-        #     train_means.append(round(train_con_met_values.iloc[i, :].astype(float).mean(), 2))
-        #     train_stds.append(round(train_con_met_values.iloc[i, :].astype(float).std(), 2))
+        if train_test == 'train':
+            setattr(self, f'{train_test}_metric_indices', [10, 11, 12, 13, 14, 15, 16]) # log loss: 15
+            self.metric_names = ['Accuracy', 'Balanced Accuracy', 'Precision', 'Recall', 'F1', 'Log Loss', 'AUC-ROC']
+        elif train_test == 'test': # and self.algorithm in ['rf', 'mlp']:
+            setattr(self, f'{train_test}_metric_indices', [6, 7, 8, 9, 10, 11, 12]) # log loss: 11
+            self.metric_names = ['Accuracy', 'Balanced Accuracy', 'Precision', 'Recall', 'F1', 'Log Loss', 'AUC-ROC']
+        # elif train_test == 'test' and self.algorithm == 'log_reg':
+        #     setattr(self, f'{train_test}_metric_indices', [6, 7, 8, 9, 10, 11, 12, 18, 19, 20, 21, 22]) # log loss: 11
+        #     self.metric_names = ['Accuracy', 'Balanced Accuracy', 'Precision', 'Recall', 'F1', 'Log Loss', 'AUC-ROC', 'Standard Error', 'Odds Ratios', 'CI Lower', 'CI Upper', 'P-Values']
+
+        #     # convert indicies 18, 19, 20, 21, 22 to float
+        #     for x in [18, 19, 20, 21, 22]:
+        #         # self.all_metric_values.iloc[x] = self.all_metric_values.iloc[x].astype(str).str.split().apply(lambda y: [float(i) for i in y[0].split()])
+
+       
+        # self.metric_names = ['Accuracy', 'Balanced Accuracy', 'Precision', 'Recall', 'F1', 'Log Loss', 'AUC-ROC']
+
+        self.all_metric_values['Mean'] = np.nan
+        self.all_metric_values['Standard Deviation'] = np.nan
+        self.all_metric_values['Max'] = np.nan
+        self.all_metric_values['Min'] = np.nan
+        self.all_metric_values['Range'] = np.nan
+        self.all_metric_values['IQR'] = np.nan
+        self.all_metric_values['Median'] = np.nan
+        self.all_metric_values['Mode'] = np.nan
+
+        self.metric_calculation_file = pd.DataFrame()
+
+        # Calculate the mean and standard deviation of the metrics
+        for idx, name in zip(getattr(self, f'{train_test}_metric_indices'), self.metric_names):
+            metric_values = self.all_metric_values.iloc[idx].astype(float)
+            mean = round(metric_values.mean(), 2)
+            stdv = round(metric_values.std(), 2)
+            min_val = round(metric_values.min(), 2)
+            max_val = round(metric_values.max(), 2)
+            median_val = round(metric_values.median(), 2)
+            range_val = round(max_val - min_val, 2)
+            mode_val = round(metric_values.mode()[0], 2)  # mode() returns a Series, take the first element
+            iqr_val = round(metric_values.quantile(0.75) - metric_values.quantile(0.25), 2)
+
+            self.metric_calculation_file = pd.concat([self.metric_calculation_file, pd.DataFrame({'Metric': [name], 'Mean': [mean], 'Standard Deviation': [stdv], 'Min': [min_val], 'Max': [max_val], 'Range': [range_val], 'Median': [median_val], 'Mode': [mode_val], 'IQR': [iqr_val]})], ignore_index=True)
         
-        # # Combine metric names and values into a single DataFrame
-        self.train_combined_metrics = pd.concat([train_con_met_names, train_con_met_values], axis=1, ignore_index=True)
-        self.train_combined_metrics.columns = ['Metrics/Attributes'] + [f'Run_{i+1}' for i in range(self.train_combined_metrics.shape[1] - 1)]
+        if self.algorithm == 'log_reg' and train_test == 'test':
+            mean_log = [round(self.all_metric_values.iloc[14].astype(float).mean(), 2),
+                round(self.all_metric_values.iloc[16].astype(float).mean(), 2), 
+                round(self.all_metric_values.iloc[23].astype(float).mean(), 2)]
+            stdv_log = [round(self.all_metric_values.iloc[15].astype(float).std(), 2),
+                round(self.all_metric_values.iloc[17].astype(float).std(), 2),
+                round(self.all_metric_values.iloc[24].astype(float).std(), 2)]
+            
+            self.metric_calculation_file = pd.concat([self.metric_calculation_file, pd.DataFrame({'Metric': ['Cross Validation', 'Coefficient', 'Effect Size'], 'Mean': mean_log, 'Standard Deviation': stdv_log})], ignore_index=True)
 
-        # # Add train_means and train_stds to the combined metrics DataFrame as new columns
-        # self.train_combined_metrics = pd.concat([self.train_combined_metrics, pd.DataFrame({
-        #     'Mean': train_means,
-        #     'Standard Deviation': train_stds
-        # })], axis=1)
+        self.metric_calculation_file.to_csv(f'/root/{self.architecture}/results/{self.algorithm}/pipeline_run/Outputs/{train_test}_{self.algorithm}_Calculated_Metrics.csv', index=False)
 
-        # print(self.train_combined_metrics)
-        # Save the combined metrics to a CSV file
-        self.train_combined_metrics.to_csv(os.path.join(self.train_csv_folder, 'Train_Metrics.csv'), index=False)
+        return self.metric_calculation_file
+    
 
-
-
-    def Test_Metrics(self):
-        ''' 
-        Combine metrics of the test (model performance) CSV files for data aggregation.
+    def Visualize_Metrics(self):
+        '''
+        Visualize the metrics
         '''
 
-        self.test_csv_metrics_files = [os.path.join(self.test_csv_folder, file) 
-                 for file in os.listdir(self.test_csv_folder) if 'Metrics_run' in file]
+        #get name of metric in self.metric_means_stdv
         
-        test_metric_names = []
-        test_metric_values = []
-  
-        for file in self.test_csv_metrics_files:
-            
-            f = open(file, newline='')
-            self.file_reader = list(csv.reader(f, dialect='excel'))
-            f.close()
-            self.file_reader = pd.DataFrame(self.file_reader)
-
-            test_metric_values.append(self.file_reader.iloc[1,:]) # Get the metric values from the second row of csv file
-
-        test_metric_names.append(self.file_reader.iloc[0,:]) # Get the metric names from the first row of csv file       
+        name = [i[0] for i in self.metric_means_stdv]
+        mean = [i[1] for i in self.metric_means_stdv]
+        stdv = [i[2] for i in self.metric_means_stdv]
         
-        # combine metric names and values into a single dataframe
-        test_con_met_names = pd.concat(test_metric_names, axis=0).reset_index(drop=True) 
-        test_con_met_values = pd.concat(test_metric_values, axis=1).reset_index(drop=True) 
-
-        # 0: gen model; 5: acc, 6: bal acc, 7: precision, 8: recall, 9: f1, 10: log loss, 11: auc, 13: cv mean, 14: cvstdv, 16: coef avg, 17: coef stdv, 19: effects stdv
-        metrics_indices = [5, 6, 7, 8 , 9, 10, 11, 13, 14, 16, 17, 19, 20]
-        test_means = []
-        test_stdv = []
-      
-        for i in metrics_indices:
-            test_means.append(round(test_con_met_values.iloc[i, :].astype(float).mean(), 2))
-            test_stdv.append(round(test_con_met_values.iloc[i, :].astype(float).std(), 2))
-        
-        # append test_means in line with proper indices as new column
-        test_avg_stdv = pd.concat([test_con_met_values, pd.DataFrame({
-            'Mean': test_means,
-            'Standard Deviation': test_stdv
-        })], axis=0)
-
-        # Combine metric names and values into a single DataFrame
-        self.test_combined_metrics = pd.concat([test_con_met_names, test_avg_stdv], axis=1, ignore_index=True)
-        self.test_combined_metrics.columns = ['Metrics/Attributes'] + [f'Run_{i+1}' for i in range(self.test_combined_metrics.shape[1] - 1)]
-
-        print(self.test_combined_metrics)
-
-        # Save the combined metrics to a CSV file
-        self.test_combined_metrics.to_csv(os.path.join(self.test_csv_folder, 'Test_Metrics.csv'), index=False)
-
-
-
-
-        # TODO: add effect sizes (mean), p value, coef mean and update in evaluate model script
-        # So for next meeting: how much detail do we want for the coefs and effect sizes? 
-        # bc I think I should keep all values
+        fig, ax = plt.subplots()
+        ax.errorbar(name, mean, yerr=stdv, fmt='o', color='blue', ecolor='red', capsize=5)
+        ax.set_title('Train Metrics')
+        ax.set_xlabel('Metric')
+        ax.set_ylabel('Mean')
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        plt.show()
 
         
     def Features_Metrics(self):
@@ -152,9 +157,7 @@ class Compare_CSVs:
 
         '''
 
-        # FIXME: Perhaps do this fx for both train & test so that not 2 separate cause essentially the same data minus 3 rows
-        # Also recall that log reg has extra rows in the csv files
-        # TODO: How to get coef representation from mlp and rf?
+        # Recall that log reg has extra rows in the csv files
 
         self.csv_ft_files = [os.path.join(self.test_csv_folder, file) 
             for file in os.listdir(self.test_csv_folder) if 'Feature_Importance' in file] 
@@ -211,12 +214,10 @@ class Compare_CSVs:
         # Reorder the columns
         cols = cols[:1] + cols[-2:] + cols[1:-2]
         self.importance_df = self.importance_df[cols]
-        # print('IMPT DF \n')
-        print(self.importance_df)
         self.importance_df.to_csv(os.path.join(self.test_csv_folder, 'Opt_Importances.csv'), index=False)
 
         # Tally loop
-        self.feature_names_whole = pd.read_csv('/root/X_cols.csv', delimiter=',', encoding='latin1', names=['Feature Names'])
+        self.feature_names_whole = pd.read_csv('/root/Features.csv', delimiter=',', encoding='latin1', names=['Feature Names'])
         self.feature_names_whole['Tally'] = 0
         
         for feature_series in self.feature_names_indiv:
@@ -241,25 +242,21 @@ class Compare_CSVs:
         return self.importance_df
 
     
-    # def Visualize_Fts(self):
+    def Visualize_Fts(self):
         
-    #     melted_df = self.feature_metrics.melt(id_vars=['Feature Name'], var_name='Metric', value_name='Value')
+        melted_df = self.feature_metrics.melt(id_vars=['Feature Name'], var_name='Metric', value_name='Value')
 
-    #     # Plotting the distribution of importance scores across models
-    #     plt.figure(figsize=(12, 8))
-    #     sns.boxplot(data=melted_df, x='Feature Name', y='Value', hue='Feature Name')
-    #     plt.title('Distribution of Importance Scores Across Models')
-    #     plt.xlabel('Features')
-    #     plt.ylabel('Importance Score')
-    #     plt.xticks(rotation=90)
-    #     plt.tight_layout()
-    #     plt.show()
+        # Plotting the distribution of importance scores across models
+        plt.figure(figsize=(12, 8))
+        sns.boxplot(data=melted_df, x='Feature Name', y='Value', hue='Feature Name')
+        plt.title('Distribution of Importance Scores Across Models')
+        plt.xlabel('Features')
+        plt.ylabel('Importance Score')
+        plt.xticks(rotation=90)
+        plt.tight_layout()
+        plt.show()
 
-    # #TODO: get standard deviation across runs for all metrics (We have it for features but not as crucial)
-    # def Compare_Models(self):
-    #     # get all metrics from the combined_metrics file
-    #     self.metrics = self.combined_metrics.iloc[:, 0]
-    #     print(self.metrics)
+
 
     
 
@@ -275,9 +272,7 @@ if __name__ == '__main__':
     # print(f'Algorithm: {args.algorithm}')
 
     file_save = Compare_CSVs()
-    file_save.Train_Metrics()
-    file_save.Test_Metrics()
+    file_save.Metrics_Calculations('test')
+    # file_save.Visualize_Metrics()
     # file_save.Features_Metrics()
-
-    # file_save.Compare_Models()
     # file_save.Visualize_Fts()
