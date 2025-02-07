@@ -5,6 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from matplotlib.backends.backend_pdf import PdfPages
+from compare_metrics_features import Compare_CSVs
 
 class Visualize_Compare_Metrics:
     def __init__(self, architecture, algorithm):
@@ -45,13 +46,13 @@ class Visualize_Compare_Metrics:
             os.makedirs(self.visualize_output_dir)
 
         # Load the feature importance metrics with tally
-        self.feature_metrics = pd.read_csv(f'{self.compiled_folder}/{self.architecture}_{self.algorithm}_Feature_Importance_Metrics_with_Tally.csv')
+        self.feature_metrics = pd.read_csv(f'{self.compiled_folder}/{self.architecture}_{self.algorithm}_Feature_Importance_Metrics_With_Tally.csv')
         self.feature_names = self.feature_metrics['Feature Names']
         self.feature_importances = self.feature_metrics['Importance Mean']
         self.feature_importance_std_devs = self.feature_metrics['Importance Std Dev']
         self.tally_count = self.feature_metrics['Tally']
 
-
+    
     def Visualize_AUC_Num_Matrix(self):
         '''
         Visualize the AUC mean and standard deviation scores for each architecture and algorithm in a heatmap.
@@ -435,23 +436,23 @@ class Visualize_Compare_Metrics:
         '''
         Create a forest plot of the odds ratios with 95% confidence intervals for logistic regression.
         '''
-        
+
         print('Doing Logistic Regression Odds Ratio Visualization')
 
         # Load the Logistic Regression Odds Ratio & Confidence Interval data
-        LR_data = pd.read_csv(f'{self.compiled_folder}/{self.architecture}_{self.algorithm}_Feature_Vals_Metrics.csv')
+        LR_data = pd.read_csv(f'{self.compiled_folder}/{self.architecture}_{self.algorithm}_LR_Feature_Vals_Metrics_With_Tally.csv')
 
         feature_name = LR_data['Feature']
-        # print(feature_name)
         mean_OR = LR_data['Mean_Odds Ratio']
         mean_upper_CI_OR = LR_data['Mean_CI Upper OR']
         mean_lower_CI_OR = LR_data['Mean_CI Lower OR']
+        lr_tally_count = LR_data['Tally']
 
         # Append forest plot directly to PDF
         with PdfPages(f'{self.visualize_output_dir}/{self.architecture}_{self.algorithm}_Forest_Plot.pdf') as pdf:
             fig, ax = plt.subplots(figsize=(12, 8))
             # values reversed because plot naturally ordered with first index at bottom. First index in self.tally_count is the highest tally.
-            ax.errorbar(mean_OR[::-1], [f'{name} ({count})' for name, count in zip(feature_name[::-1], self.tally_count[::-1])], 
+            ax.errorbar(mean_OR[::-1], [f'{name} ({count})' for name, count in zip(feature_name[::-1], lr_tally_count[::-1])], 
                 xerr=(mean_OR[::-1] - mean_lower_CI_OR[::-1], mean_upper_CI_OR[::-1] - mean_OR[::-1]), 
                 fmt='o', color='black', ecolor='black', capsize=5)
             ax.axvline(x=1.0, color='black', linestyle='--')
@@ -482,17 +483,21 @@ class Visualize_Compare_Metrics:
 
 if __name__ == '__main__':
 
-    algorithm = 'log_reg'
-    architecture = 'gc'
+    algorithm = 'mlp'
+    architecture = 'ctgan'
     
     vis = Visualize_Compare_Metrics(architecture, algorithm)
-    vis.Visualize_AUC_Num_Matrix()
-    vis.Visualize_AUC_Sub_Matrix()
     vis.Visualize_One_Test_Model_Metrics()
-    vis.Visualize_ALL_Model_Metrics()
-    vis.Visualize_ARCH_Model_Metrics()
-    vis.Visualize_ALG_Model_Metrics()
     vis.Visualize_Importances_histo_error()
     vis.Visualize_Importances_Forest()
     if algorithm == 'log_reg':
         vis.Visualize_LR_OR()
+
+    print('Visualizations done')
+
+    ## Only to run after all comparisons from compare_metrics_features done
+    # vis.Visualize_AUC_Num_Matrix()
+    # vis.Visualize_AUC_Sub_Matrix()
+    # vis.Visualize_ALL_Model_Metrics()
+    # vis.Visualize_ARCH_Model_Metrics()
+    # vis.Visualize_ALG_Model_Metrics()

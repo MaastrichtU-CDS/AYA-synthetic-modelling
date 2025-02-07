@@ -167,7 +167,7 @@ class Compare_CSVs:
         self.feature_importance_calculations = self.feature_importance_calculations.merge(self.feature_importance_tally, on='Feature Names', how='left')
         self.feature_importance_calculations = self.feature_importance_calculations[['Feature Names', 'Tally', 'Importance Mean', 'Importance Std Dev', 'Importance Min', 'Importance Max', 'Importance Median', 'Importance Mode', 'Importance IQR']]
 
-        self.feature_importance_calculations.to_csv(f'{self.compiled_folder}/{self.architecture}_{self.algorithm}_Feature_Importance_Metrics_with_Tally.csv', index=False)
+        self.feature_importance_calculations.to_csv(f'{self.compiled_folder}/{self.architecture}_{self.algorithm}_Feature_Importance_Metrics_With_Tally.csv', index=False)
 
         print('Feature Importance Metrics Done')
         return self.feature_importance_calculations
@@ -365,8 +365,8 @@ class Compare_CSVs:
 
 if __name__ == '__main__': 
 
-    algorithm = 'log_reg'
-    architecture = 'gc'
+    algorithm = 'mlp'
+    architecture = 'ctgan'
 
     file_save = Compare_CSVs(architecture=architecture, algorithm=algorithm)
     file_save.Feature_Importance_Values_Tally()
@@ -375,4 +375,6 @@ if __name__ == '__main__':
     file_save.Test_Metrics_Calculations()
     if algorithm == 'log_reg':
         file_save.Log_Reg_Scores()
+
+    print('Compare Metrics Done')
 
