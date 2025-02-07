@@ -64,16 +64,11 @@ class EvaluateModel:
         self.test_cv_scores_mean = None
         self.test_cv_scores_std = None
 
-        self.odds_ratios = None
-        self.coefs_mean = None
-        self.se = None
-        self.effect_mean = None
-        self.effect_stdv = None
-        self.coefs_stdv = None
-        self.ci_lower_or = None
-        self.ci_upper_or = None
-        self.p_values = None
-        self.Coef_Error_Plot = None
+        # save features, coefficients, standard errors, odds ratios, confidence intervals, p-values and effect sizes
+        self.coef_OR_dict = {} 
+        self.Coef_Plot = None
+        self.Or_Plot = None
+        
 
         self.Confusion_Matrix_Plot_Train = None
         self.Correlation_Plot_Train = None
@@ -160,37 +155,62 @@ class EvaluateModel:
             logging.info('Coefficients, standard errors, odds ratios, confidence intervals, p-values and effect sizes are being computed for logistic regression model')
             
             # Calculate coefficients
-            self.coefs_opt_model = np.sort(self.opt_model.coef_.flatten())
-            self.coefs_mean = round(np.mean(self.coefs_opt_model), 2)
+            coefs_opt_model = self.opt_model.coef_.flatten()
+            feature_names = self.X_train.columns
+            coefs_with_features = list(zip(feature_names, coefs_opt_model))
 
-            # Calculate standard deviation of coefficients
-            self.coefs_stdv = round(np.std(self.coefs_opt_model), 2)
+            # print(f'Coefficients with features: {coefs_with_features}')
+            logging.info(f'Coefficients with features: {coefs_with_features}')
 
             # Calculate standard errors using the covariance matrix of the coefficients
-            self.se = np.round(np.sqrt(np.diag(np.linalg.inv(np.dot(self.X_train.T, self.X_train)))), 2)
+            se = np.round(np.sqrt(np.diag(np.linalg.inv(np.dot(self.X_train.T, self.X_train)))), 2)
+            logging.info(f'Standard errors: {se}')
 
             # Calculate CIs for coefficients
-            self.z = 1.96  # for 95% confidence interval
-            self.ci_lower = self.coefs_opt_model - self.z * self.se
-            self.ci_upper = self.coefs_opt_model + self.z * self.se
+            z = 1.96  # for 95% confidence interval
+            ci_lower_coef = coefs_opt_model - z * se
+            ci_upper_coef = coefs_opt_model + z * se
+            logging.info(f'CI lower: {ci_lower_coef}')
+            logging.info(f'CI upper: {ci_upper_coef}')
 
             # Convert coefficients to CIs
-            self.ci_lower_or = np.round(np.exp(self.ci_lower), 2)
-            self.ci_upper_or = np.round(np.exp(self.ci_upper), 2)
-            self.odds_ratios = np.round(np.exp(self.coefs_opt_model), 2)
+            ci_lower_or = np.round(np.exp(ci_lower_coef), 2)
+            ci_upper_or = np.round(np.exp(ci_upper_coef), 2)
+            logging.info(f'CI lower OR: {ci_lower_or}')
+            logging.info(f'CI upper OR: {ci_upper_or}')
+            odds_ratios = np.round(np.exp(coefs_opt_model), 2)
+            logging.info(f'Odds ratios: {odds_ratios}')
 
             # Calculate p-values
-            self.p_values = 2 * (1 - stats.norm.cdf(np.abs(self.coefs_opt_model / self.se)))  # two-tailed test
-            self.p_values = np.round(self.p_values, 2)
+            p_values = 2 * (1 - stats.norm.cdf(np.abs(coefs_opt_model / se)))  # two-tailed test
+            p_values = np.round(p_values, 2)
+            logging.info(f'P-values: {p_values}')
 
             # Calculate effect sizes
-            self.effect_sizes = np.abs(self.coefs_opt_model)
-            self.effect_mean = round(np.mean(self.effect_sizes), 2)
-            self.effect_stdv = round(np.std(self.effect_sizes), 2)
+            effect_sizes = np.abs(coefs_opt_model)
+            logging.info(f'Effect sizes: {effect_sizes}')
 
-        return self.y_pred_train, self.y_proba_train, self.y_pred_test, self.y_proba_test, self.metrics_train, self.metrics_test, self.train_cv_scores, self.train_cv_scores_mean, self.train_cv_scores_std, self.test_cv_scores, self.test_cv_scores_mean, self.test_cv_scores_std, self.se, self.coefs_stdv, self.effect_mean, self.coefs_mean, self.effect_stdv, self.odds_ratios, self.ci_lower_or, self.ci_upper_or, self.p_values
+            # Create dictionary of feature: coefficient, standard error, effect size, odds ratio, CI lower, CI upper, p-valuec
+            for feature in zip(feature_names, coefs_opt_model, se, effect_sizes, odds_ratios, ci_lower_coef, ci_upper_coef, ci_lower_or, ci_upper_or, p_values):
+                self.coef_OR_dict[feature[0]] = {
+                    'coefficient': round(feature[1], 2),
+                    'standard_error': round(feature[2], 2),
+                    'effect_size': round(feature[3], 2),
+                    'odds_ratio': round(feature[4], 2),
+                    'ci_lower_coef': round(feature[5], 2),
+                    'ci_upper_coef': round(feature[6], 2),
+                    'ci_lower_or': round(feature[7], 2),
+                    'ci_upper_or': round(feature[8], 2),
+                    'p_value': round(feature[9], 2)
+                }
+            # sort dict by odds ratio, but keep features and values in same order
+            print("Coef OR dict", self.coef_OR_dict)
+          
+            logging.info(f'Feature: coefficient, standard error, effect size, odds ratio, CI lower (Coef), CI upper (Coef), CI lower (OR), CI upper (OR), p-value dictionary: {self.coef_OR_dict}')
+
+        return self.y_pred_train, self.y_proba_train, self.y_pred_test, self.y_proba_test, self.metrics_train, self.metrics_test, self.train_cv_scores, self.train_cv_scores_mean, self.train_cv_scores_std, self.test_cv_scores, self.test_cv_scores_mean, self.test_cv_scores_std, self.coef_OR_dict
     
-    def Make_Coef_Error(self):
+    def Make_Coef_Error_OR(self):
         """
         Plot the coefficients with standard error as error bars for the logistic regression model.
         Calculate the odds ratios, confidence intervals, p-values and effect sizes for the coefficients of logistic regression model.
@@ -203,12 +223,20 @@ class EvaluateModel:
             standard_deviation (float): Standard deviation of the coefficients.
         """
 
+        coefs_opt_model = np.array([v['coefficient'] for v in self.coef_OR_dict.values()])
+        odds_ratios = np.array([v['odds_ratio'] for v in self.coef_OR_dict.values()])
+        ci_lower_or = np.array([v['ci_lower_or'] for v in self.coef_OR_dict.values()])
+        ci_upper_or = np.array([v['ci_upper_or'] for v in self.coef_OR_dict.values()])
+        ci_lower_coef = np.array([v['ci_lower_coef'] for v in self.coef_OR_dict.values()])
+        ci_upper_coef = np.array([v['ci_upper_coef'] for v in self.coef_OR_dict.values()])
+
         if self.algorithm == 'log_reg':
+
             logging.info('Coefficients with standard error as error bars for logistic regression model computed')
-            self.Coef_Error_Plot, ax_test = plt.subplots(figsize=(10, 8))
-            ax_test.errorbar(self.coefs_opt_model, self.X_train.columns,
-                              xerr=self.se, fmt='o', ecolor='r', capsize=3, capthick=1)
-            ax_test.axvline(x=0, color='red', linestyle='--')
+            self.Coef_Plot, ax_test = plt.subplots(figsize=(10, 8))
+            ax_test.errorbar(coefs_opt_model, self.X_train.columns,
+                              xerr=[coefs_opt_model - ci_lower_coef, ci_upper_coef - coefs_opt_model], fmt='o', ecolor='r', capsize=3, capthick=1)
+            ax_test.axvline(x=1, color='red', linestyle='--')
             ax_test.tick_params(axis='y', rotation=0, labelsize=12)
             ax_test.set_ylabel('Features', fontsize=14)
             ax_test.set_xlabel('Coefficient', fontsize=14)
@@ -221,9 +249,31 @@ class EvaluateModel:
             for spine in ax_test.spines.values():
                 spine.set_linewidth(0.5)
             ax_test.set_facecolor('white')
+            
             plt.show()
 
-            return self.Coef_Error_Plot
+            logging.info('Odds ratio with confidence intervals plot for logistic regression model computed')
+            self.Or_Plot, ax_test = plt.subplots(figsize=(10, 8))
+            ax_test.errorbar(odds_ratios, self.X_train.columns, 
+                             xerr=[odds_ratios - ci_lower_or, ci_upper_or - odds_ratios], fmt='o', ecolor='r', capsize=3, capthick=1)
+            ax_test.axvline(x=1, color='red', linestyle='--')
+            ax_test.tick_params(axis='y', rotation=0, labelsize=12)
+            ax_test.set_ylabel('Features', fontsize=14)
+            ax_test.set_xlabel('Odds Ratio', fontsize=14)
+            ax_test.set_title('Logistic Regression Odds Ratios with 95% CI', fontsize=16)
+            ax_test.spines['top'].set_color('black')
+            ax_test.spines['right'].set_color('black')
+            ax_test.spines['bottom'].set_color('black')
+            ax_test.spines['left'].set_color('black')
+
+            # Also set line width
+            for spine in ax_test.spines.values():
+                spine.set_linewidth(0.5)
+            ax_test.set_facecolor('white')
+
+            plt.show()
+
+            return self.Coef_Plot, self.Or_Plot
         
 
     def Make_Conf(self):
@@ -390,7 +440,7 @@ class EvaluateModel:
 
 if __name__ == "__main__":
     
-     # Create an argument parser for shell script (run.sh) to provide architecture, algorithm, train_df, and test_df
+    #  Create an argument parser for shell script (run.sh) to provide architecture, algorithm, train_df, and test_df
     parser = argparse.ArgumentParser(description='Provide algorithm and architecture.')
     parser.add_argument('--architecture', choices=['ctgan', 'fast_ml', 'gc'], required=True, help='Architecture to use (ctgan, fast_ml, gc)')
     parser.add_argument('--algorithm', choices=['log_reg', 'rf', 'mlp'], required=True, help='Algorithm to use (log_reg, rf, mlp)')
@@ -400,8 +450,9 @@ if __name__ == "__main__":
 
     
     evaluate_data = EvaluateModel(algorithm=args.algorithm, train_df=args.train_df, test_df=args.test_df)  
+
     evaluate_data.Model_Performance()  
-    evaluate_data.Make_Coef_Error()
+    evaluate_data.Make_Coef_Error_OR()
     evaluate_data.Make_Conf()
     evaluate_data.Make_Corr()
     evaluate_data.Make_AUC_ROC()

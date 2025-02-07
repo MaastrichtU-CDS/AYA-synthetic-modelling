@@ -5,98 +5,207 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from datetime import datetime
-import pytz
-
 class Compare_CSVs:
-    def __init__(self, architecture='ctgan', algorithm='log_reg'):
+    def __init__(self, architecture, algorithm):
+        '''
+        This class compares the performance metrics and feature values (importance score, tally, log_reg values) 
+            across multiple runs (hence, averaging) of a pipeline.
+        Initializes the necessary folders and files for (compiled) scores across architectures and generators.
+
+        Below is a summary of the documents produced.
+        - Feature_Importance_Values
+        - Feature_Importance_Tally (csv & plot)
+        - Feature_Importance_Metrics_with_Tally
+        - Train_Avg_Calculated_Metrics
+        - Test_Avg_Calculated_Metrics
+        - Logistic_Feature_Vals_Metrics_With_Tally
+
+        Parameters:
+        - architecture (str): The architecture used in the pipeline.
+        - algorithm (str): The algorithm used in the pipeline.
+        '''
 
         self.architecture = architecture
         self.algorithm = algorithm
 
-        # Find the folder with 'Outputs' in its name
-        base_folder = f'/root/{self.architecture}/results/{self.algorithm}/pipeline_run/Outputs'
+        # Set the base folder path to fetch data for the results
+        self.base_folder = f'/root/{self.architecture}/results/{self.algorithm}/pipeline_run/Outputs'
         
-        self.test_csv_folder = os.path.join(base_folder, 'Test_1000_runs/Test_CSVs')
-        self.train_csv_folder = os.path.join(base_folder, 'Train_1000_runs/Train_CSVs')
+        self.test_csv_folder = os.path.join(self.base_folder, 'Test_1000_runs/Test_CSVs')
+        self.train_csv_folder = os.path.join(self.base_folder, 'Train_1000_runs/Train_CSVs')
+
+        self.csv_ft_files = [os.path.join(self.test_csv_folder, file) 
+            for file in os.listdir(self.test_csv_folder) if 'Feature_Importance' in file] 
+
+        # Set the output folder path to save the compiled results
+        self.compiled_folder = os.path.join(self.base_folder, 'Compiled_Results')
+
+        # Create the output folder if it does not exist
+        if not os.path.exists(self.compiled_folder):
+            os.makedirs(self.compiled_folder)
         
         # Initialize the combined metrics vars for train and test as DataFrames
-        self.train_metric_indices = []
-        self.test_metric_indices = []
+        self.all_test_metric_values = pd.DataFrame()
+        self.all_train_metric_values = pd.DataFrame()
+        self.train_metric_calculations = pd.DataFrame()
+        self.test_metric_calculations = pd.DataFrame()
+        self.metric_names = ['Accuracy', 'Balanced Accuracy', 'Precision', 'Recall', 'F1', 'Log Loss', 'AUC-ROC']
 
-        self.all_metric_names = pd.DataFrame()
-        self.all_metric_values = pd.DataFrame()
+        # Initialize for feature importance scores (all models)
+        self.combined_ft_vals = pd.DataFrame()
+        self.feature_importance_tally = pd.DataFrame(columns=['Feature Names', 'Tally'])
+        self.feature_importance_calculations = pd.DataFrame()
+        
+        # Initalize for LR scores
+        self.LR_feature_val_calculations = pd.DataFrame()
+        self.feature_logistic_values = ()
+        self.log_ft_all = pd.DataFrame()
 
-        self.metric_indices = []
-        self.metric_names = []
-         
-    def Metrics_Calculations(self, train_test):
-        ''' 
-        Combine metrics of the train (model performance) CSV files for data aggregation.
+    def Feature_Importance_Values_Tally(self):
+
+        '''
+        Concatenate feature names and importance values across runs into a single data frame and csv file. 
+        Create csv file with tally of selected features.
         '''
 
-        csv_metrics_files = [os.path.join(getattr(self, f'{train_test}_csv_folder'), file) 
-                 for file in os.listdir(getattr(self, f'{train_test}_csv_folder')) if 'Metrics_run' in file]
+        print('Doing Feature Importance Metrics')
         
-        metric_names = []
-        metric_values = []
-  
-        for file in csv_metrics_files:
+        feature_values = []
+        file_name = []
+        feature_names_indiv = []
+
+        # Loop to get the feature names and importance scores from the csv files
+        for i, file in enumerate(self.csv_ft_files):
+            run = '_'.join(file.split('/')[-1].split('_')[4:6])
+
+            f = open(file, newline='')
+            file_reader = list(csv.reader(f, dialect='excel'))
+            f.close()
+            file_reader = pd.DataFrame(file_reader)
             
+            feature_names_indiv.append(file_reader.iloc[1:, 0])
+            feature_values.append(file_reader.iloc[1:, 1].astype(float))
+
+            file_name.append(f'{run}_{self.architecture}_{self.algorithm}')
+            
+        # Combine feature names mentioned and individual values into a single DataFrame
+        feature_names = pd.concat(feature_names_indiv)
+        feature_values = pd.concat(feature_values)
+
+        ft_df = pd.DataFrame({
+            'File Name': [file_name[i]] * len(feature_names), # lists are structured such that every second element (starting from index 1) corresponds to the features and values of the files.
+            'Feature Names': feature_names,
+            'Importance': feature_values.astype(float),
+        })
+        self.combined_ft_vals = pd.concat([self.combined_ft_vals, ft_df], ignore_index=True)    
+
+        self.combined_ft_vals.to_csv(f'{self.compiled_folder}/{self.architecture}_{self.algorithm}_Feature_Importance_All.csv', index=False)
+
+        '''
+        Tally the number of times each feature appears in the feature importance values across runs.
+        Sort the feature importance tally by the number of times each feature appears.
+        Save the Tally DataFrame to a csv file.
+        Plot the feature importance tally.
+        '''
+
+        print('Doing Feature Tally')
+
+        # Tally the number of times each feature appears in the feature importance values
+        feature_counts = feature_names.value_counts()
+        self.feature_importance_tally = pd.DataFrame({
+            'Feature Names': feature_counts.index,
+            'Tally': feature_counts.values
+        }).sort_values(by='Tally', ascending=False)
+
+        print(self.feature_importance_tally)
+
+        # Save the Tally DataFrame to a csv file
+        self.feature_importance_tally.to_csv(f'{self.compiled_folder}/{self.architecture}_{self.algorithm}_Feature_Importance_Tally.csv', index=False)
+    
+        # Plot the feature importance tally
+        plt.figure(figsize=(12, 8))
+        sns.barplot(x='Feature Names', y='Tally', data=self.feature_importance_tally)
+        plt.title(f'{self.algorithm} {self.architecture} Feature Tally')
+        plt.xlabel('Features')
+        plt.ylabel('Tally')
+        plt.xticks(rotation=90)
+        plt.yticks(range(0, int(self.feature_importance_tally['Tally'].max()) + 1, 100))
+        plt.tight_layout()
+        plt.savefig(f'{self.compiled_folder}/{self.architecture}_{self.algorithm}_Feature_Importance_Tally_Histo.pdf')
+        plt.show()
+
+        print('Feature Importance Metrics & Tally Done')
+        return self.feature_importance_tally, self.combined_ft_vals
+
+    def Feature_Importance_Calculations(self):
+        '''
+        Calculate the mean, standard deviation, min, max, median, mode, and IQR of the feature importance values.
+        Save the calculated metrics to a csv file.
+        '''
+
+        print('Doing Feature Importance Calculations')
+    
+        # Calculate the mean, standard deviation, min, max, median, mode, and IQR of the feature importance values
+        for feature in self.feature_importance_tally['Feature Names']:
+            # get importance score for each feature across runs and calculate mean, std dev, min, max, median, mode, iqr
+            feature_data = self.combined_ft_vals[self.combined_ft_vals['Feature Names'] == feature]['Importance']
+            stats = {
+                'Feature Names': [feature],
+                'Importance Mean': [round(feature_data.mean(), 2)],
+                'Importance Std Dev': [round(feature_data.std(), 2)],
+                'Importance Min': [round(feature_data.min(), 2)],
+                'Importance Max': [round(feature_data.max(), 2)],
+                'Importance Median': [round(feature_data.median(), 2)],
+                'Importance Mode': [round(feature_data.mode().iloc[0], 2) if not feature_data.mode().empty else np.nan],
+                'Importance IQR': [round(feature_data.quantile(0.75) - feature_data.quantile(0.25), 2)]
+            }
+            self.feature_importance_calculations = pd.concat([self.feature_importance_calculations, pd.DataFrame(stats)], ignore_index=True)
+        
+        self.feature_importance_calculations.dropna(inplace=True)
+
+        # add tally to feature_importaance_calculations where feature names matches the feature names in feature_importance_tally
+        self.feature_importance_calculations = self.feature_importance_calculations.merge(self.feature_importance_tally, on='Feature Names', how='left')
+        self.feature_importance_calculations = self.feature_importance_calculations[['Feature Names', 'Tally', 'Importance Mean', 'Importance Std Dev', 'Importance Min', 'Importance Max', 'Importance Median', 'Importance Mode', 'Importance IQR']]
+
+        self.feature_importance_calculations.to_csv(f'{self.compiled_folder}/{self.architecture}_{self.algorithm}_Feature_Importance_Metrics_with_Tally.csv', index=False)
+
+        print('Feature Importance Metrics Done')
+        return self.feature_importance_calculations
+         
+    def Train_Metrics_Calculations(self):
+        ''' 
+        Combine performance metrics of the train CSV files for data aggregation.
+        Calculate the mean, standard deviation, min, max, median, mode, and IQR of the metrics.
+        Save the calculated metrics to a csv file.
+        '''
+
+        print('Doing Train Metrics Calculations')
+
+        train_csv_metrics_files = [os.path.join(getattr(self, 'train_csv_folder'), file) 
+                 for file in os.listdir(getattr(self, 'train_csv_folder')) if 'Metrics_run' in file]
+        
+        train_metric_values = []
+       
+        # Loop to get the metric names and values from the csv files
+        for file in train_csv_metrics_files:
+
             f = open(file, newline='')
             file_reader = list(csv.reader(f, dialect='excel'))
             f.close()
             file_reader = pd.DataFrame(file_reader)
 
-            metric_values.append(file_reader.iloc[1,:]) # Get the metric values from the second row of csv file
-            
-            #split file name into parts and get the run name
-            run_name = '_'.join(file.split('_')[7:9])
-
-            # FIXME: Make run name idx
-
-            # self.file_reader.columns[] = [run_name]
-            # print(self.file_reader)
-
-        metric_names.append(file_reader.iloc[0,:]) # Get the metric names from the first row of csv file       
+            train_metric_values.append(file_reader.iloc[1,:]) # Get the metric values from the second row of csv file
         
         # combine metric names and values into a single dataframe
-        self.all_metric_names = pd.concat(metric_names, axis=0).reset_index(drop=True) 
-        self.all_metric_values = pd.concat(metric_values, axis=1).reset_index(drop=True)
-  
-        #FIXME: perhaps take out cv scores and just keep mean and std; would be nice to have mean and stdv appended with mean and stdv cols instead of as rows.
+        self.all_train_metric_values = pd.concat(train_metric_values, axis=1).reset_index(drop=True)
+        # Initialize columns for the calculated metrics
+        self.all_train_metric_values[['Mean', 'Standard Deviation', 'Max', 'Min', 'Range', 'IQR', 'Median', 'Mode']] = np.nan
+        train_metric_indices = [10, 11, 12, 13, 14, 15, 16]
 
-        if train_test == 'train':
-            setattr(self, f'{train_test}_metric_indices', [10, 11, 12, 13, 14, 15, 16]) # log loss: 15
-            self.metric_names = ['Accuracy', 'Balanced Accuracy', 'Precision', 'Recall', 'F1', 'Log Loss', 'AUC-ROC']
-        elif train_test == 'test': # and self.algorithm in ['rf', 'mlp']:
-            setattr(self, f'{train_test}_metric_indices', [6, 7, 8, 9, 10, 11, 12]) # log loss: 11
-            self.metric_names = ['Accuracy', 'Balanced Accuracy', 'Precision', 'Recall', 'F1', 'Log Loss', 'AUC-ROC']
-        # elif train_test == 'test' and self.algorithm == 'log_reg':
-        #     setattr(self, f'{train_test}_metric_indices', [6, 7, 8, 9, 10, 11, 12, 18, 19, 20, 21, 22]) # log loss: 11
-        #     self.metric_names = ['Accuracy', 'Balanced Accuracy', 'Precision', 'Recall', 'F1', 'Log Loss', 'AUC-ROC', 'Standard Error', 'Odds Ratios', 'CI Lower', 'CI Upper', 'P-Values']
-
-        #     # convert indicies 18, 19, 20, 21, 22 to float
-        #     for x in [18, 19, 20, 21, 22]:
-        #         # self.all_metric_values.iloc[x] = self.all_metric_values.iloc[x].astype(str).str.split().apply(lambda y: [float(i) for i in y[0].split()])
-
-       
-        # self.metric_names = ['Accuracy', 'Balanced Accuracy', 'Precision', 'Recall', 'F1', 'Log Loss', 'AUC-ROC']
-
-        self.all_metric_values['Mean'] = np.nan
-        self.all_metric_values['Standard Deviation'] = np.nan
-        self.all_metric_values['Max'] = np.nan
-        self.all_metric_values['Min'] = np.nan
-        self.all_metric_values['Range'] = np.nan
-        self.all_metric_values['IQR'] = np.nan
-        self.all_metric_values['Median'] = np.nan
-        self.all_metric_values['Mode'] = np.nan
-
-        self.metric_calculation_file = pd.DataFrame()
-
-        # Calculate the mean and standard deviation of the metrics
-        for idx, name in zip(getattr(self, f'{train_test}_metric_indices'), self.metric_names):
-            metric_values = self.all_metric_values.iloc[idx].astype(float)
+        # Calculate the mean and standard deviation of the metrics and append to the dataframe
+        train_metric_calculations_list = []
+        for idx, name in zip(train_metric_indices, self.metric_names):
+            metric_values = self.all_train_metric_values.iloc[idx].astype(float)
             mean = round(metric_values.mean(), 2)
             stdv = round(metric_values.std(), 2)
             min_val = round(metric_values.min(), 2)
@@ -106,173 +215,164 @@ class Compare_CSVs:
             mode_val = round(metric_values.mode()[0], 2)  # mode() returns a Series, take the first element
             iqr_val = round(metric_values.quantile(0.75) - metric_values.quantile(0.25), 2)
 
-            self.metric_calculation_file = pd.concat([self.metric_calculation_file, pd.DataFrame({'Metric': [name], 'Mean': [mean], 'Standard Deviation': [stdv], 'Min': [min_val], 'Max': [max_val], 'Range': [range_val], 'Median': [median_val], 'Mode': [mode_val], 'IQR': [iqr_val]})], ignore_index=True)
+            train_metric_calculations_list.append(pd.DataFrame({'Metric': [name], 'Mean': [mean], 'Standard Deviation': [stdv], 'Min': [min_val], 'Max': [max_val], 'Range': [range_val], 'Median': [median_val], 'Mode': [mode_val], 'IQR': [iqr_val]}))
         
-        if self.algorithm == 'log_reg' and train_test == 'test':
-            mean_log = [round(self.all_metric_values.iloc[14].astype(float).mean(), 2),
-                round(self.all_metric_values.iloc[16].astype(float).mean(), 2), 
-                round(self.all_metric_values.iloc[23].astype(float).mean(), 2)]
-            stdv_log = [round(self.all_metric_values.iloc[15].astype(float).std(), 2),
-                round(self.all_metric_values.iloc[17].astype(float).std(), 2),
-                round(self.all_metric_values.iloc[24].astype(float).std(), 2)]
-            
-            self.metric_calculation_file = pd.concat([self.metric_calculation_file, pd.DataFrame({'Metric': ['Cross Validation', 'Coefficient', 'Effect Size'], 'Mean': mean_log, 'Standard Deviation': stdv_log})], ignore_index=True)
+        self.train_metric_calculations = pd.concat(train_metric_calculations_list, ignore_index=True)
+        self.train_metric_calculations.to_csv(f'/{self.compiled_folder}/{self.architecture}_{self.algorithm}_Train_Avg_Calculated_Metrics.csv', index=False)
 
-        self.metric_calculation_file.to_csv(f'/root/{self.architecture}/results/{self.algorithm}/pipeline_run/Outputs/{train_test}_{self.algorithm}_Calculated_Metrics.csv', index=False)
-
-        return self.metric_calculation_file
+        print('Train Metrics Calculations Done')
+        return self.train_metric_calculations, self.all_train_metric_values
     
-
-    def Visualize_Metrics(self):
+    def Test_Metrics_Calculations(self):
         '''
-        Visualize the metrics
+        Combine performance metrics of the test CSV files for data aggregation.
+        Calculate the mean, standard deviation, min, max, median, mode, and IQR of the metrics.
+        Save the calculated metrics to a csv file.
         '''
 
-        #get name of metric in self.metric_means_stdv
-        
-        name = [i[0] for i in self.metric_means_stdv]
-        mean = [i[1] for i in self.metric_means_stdv]
-        stdv = [i[2] for i in self.metric_means_stdv]
-        
-        fig, ax = plt.subplots()
-        ax.errorbar(name, mean, yerr=stdv, fmt='o', color='blue', ecolor='red', capsize=5)
-        ax.set_title('Train Metrics')
-        ax.set_xlabel('Metric')
-        ax.set_ylabel('Mean')
-        plt.xticks(rotation=45)
-        plt.tight_layout()
-        plt.show()
+        print('Doing Test Metrics Calculations')
 
+        test_metric_values = []
+
+        test_csv_metrics_files = [os.path.join(getattr(self, 'test_csv_folder'), file) 
+                 for file in os.listdir(getattr(self, 'test_csv_folder')) if 'Metrics_run' in file]
         
-    def Features_Metrics(self):
+        # Loop to get the metric names and values from the csv files
+        for file in test_csv_metrics_files:
+            
+            f = open(file, newline='')
+            file_reader = list(csv.reader(f, dialect='excel'))
+            f.close()
+            file_reader = pd.DataFrame(file_reader)
 
-        '''
-        Concatenate feature names and importance values across runs into a single data frame and csv file. 
+            test_metric_values.append(file_reader.iloc[1,:]) # Get the metric values from the second row of csv file
 
-        Attributes:
-            csv_ft_files: a list of file paths to the feature importance csv files.
+        # combine metric names and values into a single dataframe
+        self.all_test_metric_values = pd.concat(test_metric_values, axis=1).reset_index(drop=True)
+        # Initialize columns for the calculated metrics
+        self.all_test_metric_values[['Mean', 'Standard Deviation', 'Max', 'Min', 'Range', 'IQR', 'Median', 'Mode']] = np.nan
+        test_metric_indices = [6, 7, 8, 9, 10, 11, 12]
+
+        # Calculate the mean and standard deviation of the metrics
+        test_metric_calculations_list = []
+        for idx, name in zip(test_metric_indices, self.metric_names):
+            metric_values = self.all_test_metric_values.iloc[idx].astype(float)
+            mean = round(metric_values.mean(), 2)
+            stdv = round(metric_values.std(), 2)
+            min_val = round(metric_values.min(), 2)
+            max_val = round(metric_values.max(), 2)
+            median_val = round(metric_values.median(), 2)
+            range_val = round(max_val - min_val, 2)
+            mode_val = round(metric_values.mode()[0], 2)
+            iqr_val = round(metric_values.quantile(0.75) - metric_values.quantile(0.25), 2)
+
+            test_metric_calculations_list.append(pd.DataFrame({'Metric': [name], 'Mean': [mean], 'Standard Deviation': [stdv], 'Min': [min_val], 'Max': [max_val], 'Range': [range_val], 'Median': [median_val], 'Mode': [mode_val], 'IQR': [iqr_val]}))
+
+        self.test_metric_calculations = pd.concat(test_metric_calculations_list, ignore_index=True)
+        self.test_metric_calculations.to_csv(f'/{self.compiled_folder}/{self.architecture}_{self.algorithm}_Test_Avg_Calculated_Metrics.csv', index=False)
+
+        print('Test Metrics Calculations Done')
+        return self.test_metric_calculations, self.all_test_metric_values
+    
+    def Log_Reg_Scores(self):
+        """
+        Processes CSV files containing logistic regression metrics, calculates statistical summaries for features and saves the results to CSV files.
+        This function performs the following steps:
+        1. Reads CSV files from the specified folder that contain 'Feature_Values' in their filenames.
+        2. Extracts feature names and their corresponding logistic regression values from the CSV files.
+        3. Identifies features that appear more than once across the CSV files.
+        4. For each selected feature that appears more than once, calculates statistical summaries (mean, standard deviation, min, max, median, mode, IQR) 
+        for each logistic regression metric (coefficients, ORs, p-val, effect size).
+        5. Saves the calculated summaries of logistic metrics to a CSV file.
+    
+        CSV File Columns: Feature, coefficient, CI Lower Coef, CI Upper Coef, Standard Error, Odds Ratios, CI Lower OR, CI Upper OR, P-Value, Effect Size.
+        Statistical Summaries: mean, median, mode, min, max, standard deviation, IQR.
         
         Output:
-            seen_features is a set of features that have been appeared more than once in the feature names across all files.
+            - feature_logistic_values: CSV file containing the combined feature names and logistic regression values.
+            - LR_feature_val_calculations: CSV file containing the calculated statistical summaries for duplicated features.
+        """
 
-        '''
+        print('Doing Logistic Regression Calculations')
 
-        # Recall that log reg has extra rows in the csv files
-
-        self.csv_ft_files = [os.path.join(self.test_csv_folder, file) 
-            for file in os.listdir(self.test_csv_folder) if 'Feature_Importance' in file] 
+        csv_metrics_files = [os.path.join(getattr(self, 'test_csv_folder'), file) 
+                for file in os.listdir(getattr(self, 'test_csv_folder')) if 'Feature_Values' in file]
         
-        self.feature_names_indiv = [] 
-        self.feature_values = []
-        self.file_name = []
-        self.combined_ft_vals = []
+        variables = []
+        ft_log_values = []
+        value_names = []
+        run_names = []
         
-        for i, file in enumerate(self.csv_ft_files):
-            self.run = '_'.join(file.split('/')[-1].split('_')[4:6])
-
+        # Loop to get the feature names and values from the csv files
+        for file in csv_metrics_files:
+            
             f = open(file, newline='')
-            self.file_reader = list(csv.reader(f, dialect='excel'))
+            file_reader = list(csv.reader(f, dialect='excel'))
             f.close()
-            self.file_reader = pd.DataFrame(self.file_reader)
-            
-            # Add a blank row before each file's feature names and values
-            self.feature_names_indiv.append(pd.Series([None]))
-            self.feature_values.append(pd.Series([None])) 
+            file_reader = pd.DataFrame(file_reader)
 
-            self.feature_names_indiv.append(self.file_reader.iloc[1:, 0])
-            self.feature_values.append(self.file_reader.iloc[1:, 1])
+            run_name = file.split('_')[-4]
 
-            self.file_name.append(f'{self.run}_{self.architecture}_{self.algorithm}')
-            
-            # Combine feature names mentioned and individual values into a single DataFrame
-            if 'Feature' in file:
-                if len(self.feature_names_indiv) > i*2+1 and len(self.feature_values) > i*2+1:
-                    feature_names = self.feature_names_indiv[i*2+1].reset_index(drop=True)
-                    feature_values = self.feature_values[i*2+1].reset_index(drop=True)
-                    self.combined_ft_vals.append(pd.DataFrame({
-                        'File Name': [self.file_name[i]] * len(feature_names), # lists are structured such that every second element (starting from index 1) corresponds to the features and values of the files.
-                        'Feature Names': feature_names,
-                        'Importance': feature_values.astype(float),
-                        # 'Mean': round(feature_values.astype(float).mean(), 2),
-                        # 'Standard Deviation': round(feature_values.astype(float).std(), 2)
-                    }))
+            for index, row in file_reader.iterrows():
+                if index == 0:
+                    value_names = row[1:].values
+                else:
+                    variables.append(row[0]) # feature names
+                    ft_log_values.append(row[1:].astype(float).values) # log_reg feature values
+                    run_names.append(run_name) 
+
+        # Combine feature names and values into a single DataFrame
+        self.log_ft_all = (run_names, variables, value_names, ft_log_values) # tuple of all log_reg feature values
+        # Create a DataFrame from the tuple
+        self.feature_logistic_values = pd.concat(
+            [pd.DataFrame(self.log_ft_all[3][i].reshape(1, -1), columns=self.log_ft_all[2], index=[self.log_ft_all[1][i]]).assign(Run_Name=self.log_ft_all[0][i]) for i in range(len(self.log_ft_all[1]))],
+            axis=0
+        )
+        # Set index name to 'Feature'
+        self.feature_logistic_values.index.name = 'Feature'
+        self.feature_logistic_values.reset_index(inplace=True)
+        self.feature_logistic_values.to_csv(f'{self.compiled_folder}/{self.architecture}_logistic_feature_vals_across_runs.csv', index=False)
+
+        # Identify features that appear more than once across the CSV files
+        for t in self.feature_importance_tally['Feature Names']:
+            # get logistic values (eg. coefficients, ORs) and calculate mean, std dev, min, max, median, mode, iqr across values for said feature
+            feature_data = self.feature_logistic_values[self.feature_logistic_values['Feature'] == t]
+            for i, value_name in enumerate(value_names):
+                stats = {
+                    'Feature': [t],
+                }
+                for value_name in value_names:
+                    stats[f'Mean_{value_name}'] = [round(feature_data[value_name].mean(), 2)]
+                    stats[f'Std Dev_{value_name}'] = [round(feature_data[value_name].std(), 2)]
+                    stats[f'Min_{value_name}'] = [round(feature_data[value_name].min(), 2)]
+                    stats[f'Max_{value_name}'] = [round(feature_data[value_name].max(), 2)]
+                    stats[f'Median_{value_name}'] = [round(feature_data[value_name].median(), 2)]
+                    stats[f'Mode_{value_name}'] = [round(feature_data[value_name].mode().iloc[0], 2)]
+                    stats[f'IQR_{value_name}'] = [round(feature_data[value_name].quantile(0.75) - feature_data[value_name].quantile(0.25), 2)]
+
+            # Add tally to stats
+            stats['Tally'] = [self.feature_importance_tally[self.feature_importance_tally['Feature Names'] == t]['Tally'].values[0]]
+            # Make tally the second column
+            stats = {k: stats[k] for k in ['Feature', 'Tally'] + [key for key in stats if key not in ['Feature', 'Tally']]}
         
-        # Concatenate all dataframes in the list
-        self.all_ft_vals_df = pd.concat(self.combined_ft_vals, ignore_index=True).drop_duplicates()
-
-        # Pivot the DataFrame to have file names as columns and feature names as rows
-        self.importance_df = self.all_ft_vals_df.pivot_table(index='Feature Names', columns='File Name', values='Importance', aggfunc='first')
+            # Append stats to the DataFrame
+            self.LR_feature_val_calculations = pd.concat([self.LR_feature_val_calculations, pd.DataFrame(stats)], ignore_index=True)
         
-        # Reset the index to make 'Feature Names' a column again
-        self.importance_df.reset_index(inplace=True)
- 
-        # From importance scores across df for each feature get the mean and standard deviation
-        self.importance_df['Mean'] = round(self.importance_df.iloc[:, 1:].mean(axis=1), 2)
-        self.importance_df['Standard Deviation'] = round(self.importance_df.iloc[:, 1:].std(axis=1), 2)
-        cols = self.importance_df.columns.tolist()
-        
-        # Reorder the columns
-        cols = cols[:1] + cols[-2:] + cols[1:-2]
-        self.importance_df = self.importance_df[cols]
-        self.importance_df.to_csv(os.path.join(self.test_csv_folder, 'Opt_Importances.csv'), index=False)
+        self.LR_feature_val_calculations.to_csv(f'{self.compiled_folder}/{self.architecture}_{self.algorithm}_LR_Feature_Vals_Metrics_With_Tally.csv', index=False)
 
-        # Tally loop
-        self.feature_names_whole = pd.read_csv('/root/Features.csv', delimiter=',', encoding='latin1', names=['Feature Names'])
-        self.feature_names_whole['Tally'] = 0
-        
-        for feature_series in self.feature_names_indiv:
-            for feature in feature_series.dropna().values:
-                if feature in self.feature_names_whole['Feature Names'].values:
-                    self.feature_names_whole.loc[self.feature_names_whole['Feature Names'] == feature, 'Tally'] += 1
-
-        self.feature_names_whole.to_csv(os.path.join(self.test_csv_folder, 'Opt Feature Tally.csv'), index=False)
-
-        print('\n Ft Whole Tally \n ', self.feature_names_whole)
-
-        plt.figure(figsize=(12, 8))
-        sns.barplot(x='Feature Names', y='Tally', data=self.feature_names_whole.sort_values(by='Tally', ascending=False))
-        plt.title('Feature Tally Across Models')
-        plt.xlabel('Features')
-        plt.ylabel('Tally')
-        plt.xticks(rotation=90)
-        plt.yticks(range(0, self.feature_names_whole['Tally'].max() + 1, 10))
-        plt.tight_layout()
-        plt.show()
-
-        return self.importance_df
-
-    
-    def Visualize_Fts(self):
-        
-        melted_df = self.feature_metrics.melt(id_vars=['Feature Name'], var_name='Metric', value_name='Value')
-
-        # Plotting the distribution of importance scores across models
-        plt.figure(figsize=(12, 8))
-        sns.boxplot(data=melted_df, x='Feature Name', y='Value', hue='Feature Name')
-        plt.title('Distribution of Importance Scores Across Models')
-        plt.xlabel('Features')
-        plt.ylabel('Importance Score')
-        plt.xticks(rotation=90)
-        plt.tight_layout()
-        plt.show()
-
-
-
-    
-
+        print('Logistic Regression Calculations Done')
+        return self.LR_feature_val_calculations, self.feature_logistic_values, self.log_ft_all
 
 if __name__ == '__main__': 
 
-    # parser = argparse.ArgumentParser(description='Provide algorithm and architecture.')
-    # parser.add_argument('--architecture', choices=['ctgan', 'fast_ml', 'gc'], required=True, help='Architecture to use (ctgan, fast_ml, gc)')
-    # parser.add_argument('--algorithm', choices=['log_reg', 'rf', 'mlp'], required=True, help='Algorithm to use (log_reg, rf, mlp)')
-    # args = parser.parse_args()
+    algorithm = 'log_reg'
+    architecture = 'gc'
 
-    # print(f'Architecture: {args.architecture}')
-    # print(f'Algorithm: {args.algorithm}')
+    file_save = Compare_CSVs(architecture=architecture, algorithm=algorithm)
+    file_save.Feature_Importance_Values_Tally()
+    file_save.Feature_Importance_Calculations()
+    file_save.Train_Metrics_Calculations()
+    file_save.Test_Metrics_Calculations()
+    if algorithm == 'log_reg':
+        file_save.Log_Reg_Scores()
 
-    file_save = Compare_CSVs()
-    file_save.Metrics_Calculations('test')
-    # file_save.Visualize_Metrics()
-    # file_save.Features_Metrics()
-    # file_save.Visualize_Fts()
