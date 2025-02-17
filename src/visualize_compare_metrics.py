@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+from seaborn import histplot
 from matplotlib.backends.backend_pdf import PdfPages
 from compare_metrics_features import Compare_CSVs
 
@@ -93,9 +94,50 @@ class Visualize_Compare_Metrics:
         plt.show()
         plt.close()
 
+    def Visualize_ACCURACY_Num_Matrix(self):
+        '''
+        Visualize the AUC mean and standard deviation scores for each architecture and algorithm in a heatmap.
+        '''
+
+        print('Doing Accuracy Num Visualization')
+
+        _, ax = plt.subplots(figsize=(8, 6))
+        
+        # enumerate through the architectures and algorithms
+        mean_ac_matrix = np.zeros((len(self.arch), len(self.alg)))
+        std_ac_matrix = np.zeros((len(self.arch), len(self.alg)))
+
+        for i, architecture in enumerate(self.arch):
+            # for each architecture, iterate through the algorithms
+            for j, algorithm in enumerate(self.alg):
+
+                # get the avg AUC scores across runs
+                test_csv_mets = pd.read_csv(f'/root/{architecture}/results/{algorithm}/pipeline_run/Outputs/Compiled_Results/{architecture}_{algorithm}_Test_Avg_Calculated_Metrics.csv')
+                mean_ac_matrix[i, j] = test_csv_mets.iloc[0, 1]
+                std_ac_matrix[i, j] = test_csv_mets.iloc[0, 2]
+
+                # Check to ensure proper values are being stored
+                print(f'{architecture} {algorithm} {mean_ac_matrix[i, j]}')
+                print(f'{architecture} {algorithm} {std_ac_matrix[i, j]}')
+
+        # Create a heatmap of the mean AUC scores with standard deviation
+        sns.heatmap(mean_ac_matrix, annot=False, fmt=".2f", cmap="Blues", xticklabels=self.alg, yticklabels=self.arch, cbar_kws={'label': 'Accuracy Score'})
+        for i in range(len(self.arch)):
+            for j in range(len(self.alg)):
+                text_color = 'black' if mean_ac_matrix[i, j] < 0.8 else 'white'
+                ax.text(j + 0.5, i + 0.5, f"{mean_ac_matrix[i, j]:.2f}\n±{std_ac_matrix[i, j]:.2f}", ha='center', va='center', color=text_color, fontsize=12)
+            
+        plt.title('Mean Accuracy (Standard Deviation) of 1000 Datasets Across Algorithms and Architectures')
+        plt.xlabel('Algorithm')
+        plt.ylabel('Architecture')
+        plt.savefig('/root/ACCURACY_Scores_Across_Gens.pdf')
+        plt.show()
+        plt.close()
+
     def Visualize_AUC_Sub_Matrix(self):
         """
         Visualize the AUC scores (histogram matrix) for each architecture and algorithm in a 4x3 grid of subplots.
+        FIXME: Change title of graph
         """
 
         print('Doing AUC Sub Matrix Visualization')
@@ -104,10 +146,17 @@ class Visualize_Compare_Metrics:
         fig, axs = plt.subplots(4, 3, figsize=(15, 20))
         axs = axs.flatten()
 
+        bin_start = 0.5  # Minimum AUC score
+        bin_end = 1.0    # Maximum AUC score
+        bin_width = 0.02 # Fixed bin width
+        bins = np.arange(bin_start, bin_end + bin_width, bin_width)  # Create array of bin edges
+
         # enemurate through the architectures and algorithms
         for i, architecture in enumerate(self.arch):
+
             #for each architecture, iterate through the algorithms
             for j, algorithm in enumerate(self.alg):
+
                 # get the AUC scores for each run
                 AUC_scores = []
                 test_csv_folder = f'/root/{architecture}/results/{algorithm}/pipeline_run/Outputs/Test_1000_runs/Test_CSVs'
@@ -134,16 +183,31 @@ class Visualize_Compare_Metrics:
                 ax.axvline(mean_auc, color='b', linestyle='dashed', linewidth=1)
 
                 # Add text to the plot to state the mean and standard deviation of the AUC scores
-                ax.text(0.95, 0.95, f'Mean: {mean_auc:.2f}\n Std: {std_auc:.2f}', color='b', va='top', ha='right', transform=ax.transAxes)
+                ax.text(0.95, 0.95, f'Mean: {mean_auc:.2f}\n Std: {std_auc:.2f}', color='b', va='top', ha='right', transform=ax.transAxes, fontsize=15)
 
                 # Plot the histogram of the AUC scores
-                ax.hist(AUC_scores, bins=30, color='black', alpha=0.6, density=True)
-                
+                ax.hist(AUC_scores, bins=bins, color='black', alpha=0.8, density=False)
+
+                if architecture == 'fast_ml':
+                    arch = 'Fast ML'
+                elif architecture == 'gc':
+                    arch = 'GC'
+                elif architecture == 'ctgan':
+                    arch = 'CTGAN'
+                elif architecture == 'dp_cgan':
+                    arch = 'DP-CGAN'
+            
+                if algorithm == 'log_reg':
+                    alg = 'LR'
+                elif algorithm == 'rf':
+                    alg = 'RF'
+                elif algorithm == 'mlp':
+                    alg = 'MLP'
+
                 # Plot the histogram of the AUC scores
-                ax.hist(AUC_scores, bins=30, color='black')
-                ax.set_title(f'{architecture} {algorithm}', fontsize=15)
+                ax.set_title(f'{arch}-{alg}', fontsize=15)
                 ax.set_xticks(np.arange(0.5, 1.0, 0.05)) # Min score doesn't go lower than 0.5. 
-                ax.set_yticks(np.arange(0, 700, 100)) # Max frequency doesn't go higher than 500.
+                ax.set_yticks(np.arange(0, 800, 100)) # Max frequency doesn't go higher than 500.
                 ax.set_xlabel('AUC Score')
                 ax.set_ylabel('Frequency')
 
@@ -151,7 +215,6 @@ class Visualize_Compare_Metrics:
         plt.savefig('/root/AUC_Scores_All_Datasets_Subplots.pdf')
         plt.show()
         plt.close()
-
 
     def Visualize_One_Test_Model_Metrics(self):
         '''
@@ -192,7 +255,7 @@ class Visualize_Compare_Metrics:
 
         print('Doing All Model Metrics Visualization')
 
-        _, ax = plt.subplots(figsize=(10, 6))
+        _, ax = plt.subplots(figsize=(12, 15))
 
         # for each architecture and algorithm, plot the test model metrics with error bars
         for architecture in self.arch:
@@ -205,6 +268,7 @@ class Visualize_Compare_Metrics:
                 test_model_std_devs = test_model_metrics.iloc[:, 2]
                 
                 ax.errorbar(x=test_model_metrics_names, y=test_model_means, yerr=test_model_std_devs, fmt='o', label=f'{architecture} {algorithm}')
+
 
         ax.set_title('Test Model Metrics Means and Standard Deviation as Error Bars')
         ax.set_xlabel('Metric')
@@ -261,121 +325,127 @@ class Visualize_Compare_Metrics:
         Visualize the test model performance metrics with error bars. Grouping by algorithm.
         Metrics: Accuracy, Precision, Recall, F1, and Log Loss
         '''
-        #FIXME: Not well displayed
-
-        print('Doing Model Metrics_Alg Visualization')
-
-        fig, axs = plt.subplots(1, len(self.alg), figsize=(12, 6))
-
-        for i, algorithm in enumerate(self.alg):
-            all_metrics = []
-            
-            for architecture in self.arch:
-                # Load test model metrics
-                test_model_metrics = pd.read_csv(f'/root/{architecture}/results/{algorithm}/pipeline_run/Outputs/Compiled_Results/{architecture}_{algorithm}_Test_Avg_Calculated_Metrics.csv')        
-                test_model_metrics = test_model_metrics.drop([1])  # Drop rows if necessary
-                test_model_metrics = test_model_metrics.drop([6])
-
-                test_model_metrics_names = test_model_metrics.iloc[:, 0]  # Metric names
-                test_model_means = test_model_metrics.iloc[:, 1]  # Mean values
-                test_model_std_devs = test_model_metrics.iloc[:, 2]  # Std values
-
-                for name, mean, std in zip(test_model_metrics_names, test_model_means, test_model_std_devs):
-                    all_metrics.append([architecture, name, mean, std])
-
-            # Convert to DataFrame
-            metrics_df = pd.DataFrame(all_metrics, columns=['Architecture', 'Metric', 'Mean', 'Std'])
-
-            # Get unique metrics
-            metrics = metrics_df['Metric'].unique()
-            
-            # Prepare data for `matplotlib`'s `ax.boxplot`
-            box_data = []
-            positions = []
-            labels = []
-            
-            for j, metric in enumerate(metrics):
-                for k, architecture in enumerate(self.arch):
-                    subset = metrics_df[(metrics_df['Metric'] == metric) & (metrics_df['Architecture'] == architecture)]
-                    
-                    if not subset.empty:
-                        mean = subset['Mean'].values[0]
-                        std = subset['Std'].values[0]
-                        
-                        # Define box plot stats
-                        Q1 = mean - 0.5 * std  # Approximate Q1
-                        Q3 = mean + 0.5 * std  # Approximate Q3
-                        whisker_low = mean - std
-                        whisker_high = mean + std
-                        median = mean  # Median is the mean itself
-
-                        box_data.append([whisker_low, Q1, median, Q3, whisker_high])
-                        positions.append(j + k * 0.2)  # Space architectures apart
-                        labels.append(f"{metric}\n{architecture}")
-
-            # Create box plots for each metric score (ie. architecture) per algorithm
-            colors = ['blue', 'green', 'purple', 'yellow']
-            for k, architecture in enumerate(self.arch):
-                arch_positions = [pos + k * 0.2 for idx, pos in enumerate(positions) if idx % len(self.arch) == k]
-                axs[i].boxplot(
-                    [box_data[m] for m in range(len(box_data)) if m % len(self.arch) == k],
-                    positions=arch_positions,
-                    widths=0.2,
-                    patch_artist=True,
-                    boxprops=dict(facecolor=colors[k])
-                )
-
-            # Create a custom legend
-            legend_handles = [plt.Line2D([0], [0], color='w', marker='s', markersize=10, markerfacecolor=color, label=arch) for color, arch in zip(colors, self.arch)]
-            axs[i].legend(handles=legend_handles, title='Architecture', loc='upper right')
-            
-            axs[i].set_xticks(range(len(metrics)))
-            axs[i].set_xticklabels(metrics, rotation=45)
-            axs[i].set_title(f'{algorithm} Test Model Metrics (Mean ± Std Dev)')
-            axs[i].set_ylim(0, 1)
-            axs[i].set_ylabel("Value")
-
-        plt.tight_layout()
-        plt.savefig('/root/All_Test_Model_Metrics_Alg.pdf')
-        plt.show()
-        plt.close()
-
-        # def Visualize_ALG_Model_Metrics(self):
+        # #FIXME: Not well displayed
+        # Commented out  as precaution.
 
         # print('Doing Model Metrics_Alg Visualization')
+        sns.set_context('poster')
 
-        # # Create a 3x1 grid of subplots
-        # fig, axs = plt.subplots(3, 1, figsize=(6, 13))
-        # axs = axs.flatten()
+        # fig, axs = plt.subplots(1, len(self.alg), figsize=(12, 6))
+        
 
-        # # For each algorithm, plot the test model metrics (for each architecture)
         # for i, algorithm in enumerate(self.alg):
+        #     all_metrics = []
+            
         #     for architecture in self.arch:
+        #         # Load test model metrics
         #         test_model_metrics = pd.read_csv(f'/root/{architecture}/results/{algorithm}/pipeline_run/Outputs/Compiled_Results/{architecture}_{algorithm}_Test_Avg_Calculated_Metrics.csv')        
-        #         test_model_metrics = test_model_metrics.drop([1])
+        #         test_model_metrics = test_model_metrics.drop([1])  # Drop rows if necessary
         #         test_model_metrics = test_model_metrics.drop([6])
 
-        #         test_model_metrics_names = test_model_metrics.iloc[:, 0]
-        #         test_model_means = test_model_metrics.iloc[:, 1]
-        #         test_model_std_devs = test_model_metrics.iloc[:, 2]
-                
-        #         axs[i].errorbar(x=test_model_metrics_names, y=test_model_means, yerr=test_model_std_devs, fmt='o', label=f'{architecture} {algorithm}')
+        #         test_model_metrics_names = test_model_metrics.iloc[:, 0]  # Metric names
+        #         test_model_means = test_model_metrics.iloc[:, 1]  # Mean values
+        #         test_model_std_devs = test_model_metrics.iloc[:, 2]  # Std values
 
-        #         axs[i].set_title(f'{algorithm} Test Model Metrics')
-        #         axs[i].set_xlabel('Metric')
-        #         axs[i].set_ylabel('Mean')
-        #         axs[i].set_ylim(0, 1)
-        #         axs[i].tick_params(axis='x', rotation=45)
+        #         for name, mean, std in zip(test_model_metrics_names, test_model_means, test_model_std_devs):
+        #             all_metrics.append([architecture, name, mean, std])
+
+        #     # Convert to DataFrame
+        #     metrics_df = pd.DataFrame(all_metrics, columns=['Architecture', 'Metric', 'Mean', 'Std'])
+
+        #     # Get unique metrics
+        #     metrics = metrics_df['Metric'].unique()
             
-        #     # Create a legend for each subplot
-        #     handles, labels = axs[i].get_legend_handles_labels()
-        #     by_label = {label.split()[0]: handle for handle, label in zip(handles, labels)}
-        #     axs[i].legend(by_label.values(), by_label.keys(), loc='lower right')
+        #     # Prepare data for `matplotlib`'s `ax.boxplot`
+        #     box_data = []
+        #     positions = []
+        #     labels = []
+            
+        #     for j, metric in enumerate(metrics):
+        #         for k, architecture in enumerate(self.arch):
+        #             subset = metrics_df[(metrics_df['Metric'] == metric) & (metrics_df['Architecture'] == architecture)]
+                    
+        #             if not subset.empty:
+        #                 mean = subset['Mean'].values[0]
+        #                 std = subset['Std'].values[0]
+                        
+        #                 # Define box plot stats
+        #                 Q1 = mean - 0.5 * std  # Approximate Q1
+        #                 Q3 = mean + 0.5 * std  # Approximate Q3
+        #                 whisker_low = mean - std
+        #                 whisker_high = mean + std
+        #                 median = mean  # Median is the mean itself
+
+        #                 box_data.append([whisker_low, Q1, median, Q3, whisker_high])
+        #                 positions.append(j + k * 0.2)  # Space architectures apart
+        #                 labels.append(f"{metric}\n{architecture}")
+
+        #     # Create box plots for each metric score (ie. architecture) per algorithm
+        #     colors = ['blue', 'green', 'purple', 'yellow']
+        #     for k, architecture in enumerate(self.arch):
+        #         arch_positions = [pos + k * 0.2 for idx, pos in enumerate(positions) if idx % len(self.arch) == k]
+        #         axs[i].boxplot(
+        #             [box_data[m] for m in range(len(box_data)) if m % len(self.arch) == k],
+        #             positions=arch_positions,
+        #             widths=0.2,
+        #             patch_artist=True,
+        #             boxprops=dict(facecolor=colors[k])
+        #         )
+
+        #     # Create a custom legend
+        #     legend_handles = [plt.Line2D([0], [0], color='w', marker='s', markersize=10, markerfacecolor=color, label=arch) for color, arch in zip(colors, self.arch)]
+        #     axs[i].legend(handles=legend_handles, title='Architecture', loc='upper right')
+            
+        #     axs[i].set_xticks(range(len(metrics)))
+        #     axs[i].set_xticklabels(metrics, rotation=45)
+        #     axs[i].set_title(f'{algorithm} Test Model Metrics (Mean ± Std Dev)')
+        #     axs[i].set_ylim(0, 1)
+        #     axs[i].set_ylabel("Value")
 
         # plt.tight_layout()
         # plt.savefig('/root/All_Test_Model_Metrics_Alg.pdf')
         # plt.show()
         # plt.close()
+
+        # def Visualize_ALG_Model_Metrics(self):
+
+        print('Doing Model Metrics_Alg Visualization')
+
+        # Create a 3x1 grid of subplots
+        fig, axs = plt.subplots(1, 3, figsize=(25, 8))
+        axs = axs.flatten()
+
+        # For each algorithm, plot the test model metrics (for each architecture)
+        for i, algorithm in enumerate(self.alg):
+            for architecture in self.arch:
+                test_model_metrics = pd.read_csv(f'/root/{architecture}/results/{algorithm}/pipeline_run/Outputs/Compiled_Results/{architecture}_{algorithm}_Test_Avg_Calculated_Metrics.csv')        
+                test_model_metrics = test_model_metrics.drop([1])
+                test_model_metrics = test_model_metrics.drop([6])
+
+                test_model_metrics_names = test_model_metrics.iloc[:, 0]
+                test_model_means = test_model_metrics.iloc[:, 1]
+                test_model_std_devs = test_model_metrics.iloc[:, 2]
+                
+                axs[i].errorbar(x=test_model_metrics_names, y=test_model_means, yerr=test_model_std_devs, fmt='o', markersize=8, label=f'{architecture} {algorithm}')
+
+                axs[i].set_title(f'{algorithm} Test Model Metrics')
+                axs[i].set_xlabel('Metric')
+                axs[i].set_ylabel('Mean')
+                axs[i].set_ylim(0, 1)
+                axs[i].tick_params(axis='x', rotation=45)
+            
+            # Create a legend for each subplot
+            handles, labels = axs[i].get_legend_handles_labels()
+            by_label = {label.split()[0]: handle for handle, label in zip(handles, labels)}
+            axs[i].legend(by_label.values(), by_label.keys(), loc='upper right', title='Architecture', fontsize='14', title_fontsize='16')
+
+            axs[i].set_yticks(np.arange(0, 1.0, 0.1))
+
+
+        plt.tight_layout()
+        plt.savefig('/root/All_Test_Model_Metrics_Alg.pdf')
+        plt.show()
+        plt.close()
 
     def Visualize_Importances_histo_error(self):
         '''
@@ -481,23 +551,130 @@ class Visualize_Compare_Metrics:
         Lr_Or_table.to_csv(f'{self.visualize_output_dir}/{self.architecture}_{self.algorithm}_OR_TABLE.csv', index=False)
 
 
+    def All_Hist_AUC2(self):
+        """
+        Visualize the AUC scores (histogram matrix) for each architecture and algorithm in a 4x3 grid of subplots.
+        FIXME: Change smooth line to blue
+        """
+
+        print('Doing AUC Sub Matrix Visualization')
+
+        # Set the plotting style to 'poster'
+        sns.set_style('white')
+        sns.set_context('poster')
+
+        # Create a 4x3 grid of subplots
+        fig, axs = plt.subplots(4, 3, sharex=True, sharey=True, figsize=(15, 20))
+        fig.suptitle('Frequency Distribution of AUC Scores Across Algorithms and Architectures')
+        axs = axs.flatten()
+
+        # Create equally spaced bins for the AUC scores
+        bin_start = 0.5  # Minimum AUC score
+        bin_end = 1.0    # Maximum AUC score
+        bin_width = 0.02 # Fixed bin width
+        bins = np.arange(bin_start, bin_end + bin_width, bin_width)  # Create array of bin edges
+
+        # enumerate through the architectures and algorithms
+        for i, architecture in enumerate(self.arch):
+
+            # for each architecture, iterate through the algorithms
+            for j, algorithm in enumerate(self.alg):
+
+                # get the AUC scores for each run
+                AUC_scores = []
+                test_csv_folder = f'/root/{architecture}/results/{algorithm}/pipeline_run/Outputs/Test_1000_runs/Test_CSVs'
+                test_csv_metrics_files = [os.path.join(test_csv_folder, file) 
+                        for file in os.listdir(test_csv_folder) if 'Metrics_run' in file]
+            
+                # iterate through the test CSV files and extract the AUC scores
+                for file in test_csv_metrics_files:
+                    with open(file, newline='') as f:
+                        file_reader = list(csv.reader(f, dialect='excel'))
+                    file_reader = pd.DataFrame(file_reader)
+
+                    # get AUC score & append to list 
+                    auc_score = float(file_reader.iloc[1, 12])
+                    AUC_scores.append(auc_score)
+
+                # plot the histogram of the AUC scores by architecture and algorithm
+                ax = axs[i * 3 + j]   
+
+                # Calculate the mean and standard deviation of the AUC scores for each architecture and algorithm
+                mean_auc = np.mean(AUC_scores)
+                std_auc = np.std(AUC_scores)
+
+                # Use a vertical line to indicate the mean with dashed line
+                ax.axvline(mean_auc, color='b', linestyle='dashed', linewidth=1)
+
+                # Add text to the plot to state the mean and standard deviation of the AUC scores
+                ax.text(0.95, 0.95, f'Mean: {mean_auc:.2f}\n Std: {std_auc:.2f}', color='black', va='top', ha='right', transform=ax.transAxes, fontsize=15)
+
+                # Plot the histogram of the AUC scores using seaborn
+                sns.histplot(AUC_scores, bins=bins, ax=ax, kde=True, alpha=0.7, color='black')
+                ax.set_ylim(0, max(np.histogram(AUC_scores, bins=bins)[0]) + 50)
+
+                # # Calculate the maximum value of the kde plot
+                # kde = sns.kdeplot(AUC_scores, ax=ax, color='blue')
+                # kde_max = kde.get_lines()[-1].get_data()[1].max()
+
+                # # Set the y-axis limit to the maximum of the histogram, kde plot, or 800 plus some padding
+                # ax.set_ylim(0, min(max(np.histogram(AUC_scores, bins=bins)[0].max(), kde_max) + 50, 800))
+
+                if architecture == 'fast_ml':
+                    arch = 'Fast ML'
+                elif architecture == 'gc':
+                    arch = 'GC'
+                elif architecture == 'ctgan':
+                    arch = 'CTGAN'
+                elif architecture == 'dp_cgan':
+                    arch = 'DP-CGAN'
+                
+                if algorithm == 'log_reg':
+                    alg = 'LR'
+                elif algorithm == 'rf':
+                    alg = 'RF'
+                elif algorithm == 'mlp':
+                    alg = 'MLP'
+
+                # Plot the histogram of the AUC scores
+                ax.set_title(f'{arch}-{alg}') 
+                xticks = np.arange(0.5, 1.0, 0.1)
+                xticks = np.append(xticks, 1.0)
+                ax.set_xticks(xticks)
+
+                ax.tick_params(axis='x', rotation=45)
+                ax.set_yticks(np.arange(0, 800, 100)) 
+                ax.set_ylabel('Frequency', visible=False)
+        fig.supxlabel('AUC Score')
+        fig.supylabel('Frequency')
+
+        plt.tight_layout()
+        plt.savefig('/root/AUC_Scores_All_Datasets_Subplots_NEW.pdf')
+        plt.show()
+        plt.close()
+
+        
+
 if __name__ == '__main__':
 
     algorithm = 'mlp'
     architecture = 'ctgan'
     
     vis = Visualize_Compare_Metrics(architecture, algorithm)
-    vis.Visualize_One_Test_Model_Metrics()
-    vis.Visualize_Importances_histo_error()
-    vis.Visualize_Importances_Forest()
-    if algorithm == 'log_reg':
-        vis.Visualize_LR_OR()
-
-    print('Visualizations done')
+    # vis.Visualize_One_Test_Model_Metrics()
+    # vis.Visualize_Importances_histo_error()
+    # vis.Visualize_Importances_Forest()
+    # if algorithm == 'log_reg':
+    #     vis.Visualize_LR_OR()
 
     ## Only to run after all comparisons from compare_metrics_features done
     # vis.Visualize_AUC_Num_Matrix()
+    # vis.Visualize_ACCURACY_Num_Matrix()
     # vis.Visualize_AUC_Sub_Matrix()
     # vis.Visualize_ALL_Model_Metrics()
     # vis.Visualize_ARCH_Model_Metrics()
     # vis.Visualize_ALG_Model_Metrics()
+    # vis.All_Hist_AUC2()
+
+    # print('Visualizations done')
+
