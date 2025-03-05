@@ -12,13 +12,13 @@ class Compare_CSVs:
             across multiple runs (hence, averaging) of a pipeline.
         Initializes the necessary folders and files for (compiled) scores across architectures and generators.
 
-        Below is a summary of the documents produced.
-        - Feature_Importance_Values
-        - Feature_Importance_Tally (csv & plot)
-        - Feature_Importance_Metrics_with_Tally
-        - Train_Avg_Calculated_Metrics
-        - Test_Avg_Calculated_Metrics
-        - Logistic_Feature_Vals_Metrics_With_Tally
+        Below is a summary of the functions.
+        - Feature_Importance_Values_Tally(): Tally the number of times a feature was selected across runs
+        - Feature_Importance_Calculations(): Calculate the mean, standard deviation, min, max, median, mode, and IQR of the feature importance values
+        - Train_Metrics_Calculations(): Calculate the mean, standard deviation, min, max, median, mode, and IQR of the train metrics
+        - Test_Metrics_Calculations(): Calculate the mean, standard deviation, min, max, median, mode, and IQR of the test metrics
+        - Log_Reg_Scores(): 
+
 
         Parameters:
         - architecture (str): The architecture used in the pipeline.
@@ -31,9 +31,11 @@ class Compare_CSVs:
         # Set the base folder path to fetch data for the results
         self.base_folder = f'/root/{self.architecture}/results/{self.algorithm}/pipeline_run/Outputs'
         
+        # Set the folder paths to fetch the test and train CSV files
         self.test_csv_folder = os.path.join(self.base_folder, 'Test_1000_runs/Test_CSVs')
         self.train_csv_folder = os.path.join(self.base_folder, 'Train_1000_runs/Train_CSVs')
 
+        # Get the feature importance csv files
         self.csv_ft_files = [os.path.join(self.test_csv_folder, file) 
             for file in os.listdir(self.test_csv_folder) if 'Feature_Importance' in file] 
 
@@ -44,28 +46,31 @@ class Compare_CSVs:
         if not os.path.exists(self.compiled_folder):
             os.makedirs(self.compiled_folder)
         
-        # Initialize the combined metrics vars for train and test as DataFrames
+        # Initialize the combined metrics variables for train and test as DataFrames
         self.all_test_metric_values = pd.DataFrame()
         self.all_train_metric_values = pd.DataFrame()
         self.train_metric_calculations = pd.DataFrame()
         self.test_metric_calculations = pd.DataFrame()
         self.metric_names = ['Accuracy', 'Balanced Accuracy', 'Precision', 'Recall', 'F1', 'Log Loss', 'AUC-ROC']
 
-        # Initialize for feature importance scores (all models)
+        # Initialize variables for feature importance scores (all models)
         self.combined_ft_vals = pd.DataFrame()
         self.feature_importance_tally = pd.DataFrame(columns=['Feature Names', 'Tally'])
         self.feature_importance_calculations = pd.DataFrame()
         
-        # Initalize for LR scores
-        self.LR_feature_val_calculations = pd.DataFrame()
+        # Initalize variables for LR scores
+        self.Lr_feature_val_calculations = pd.DataFrame()
         self.feature_logistic_values = ()
         self.log_ft_all = pd.DataFrame()
 
     def Feature_Importance_Values_Tally(self):
-
         '''
         Concatenate feature names and importance values across runs into a single data frame and csv file. 
         Create csv file with tally of selected features.
+
+        Output documents: 
+        - Indivdiualized feature importance scores for each run: Feature_Importance_All.csv
+        - Tally number of times feature was selected across runs: Feature_Importance_Tally.csv
         '''
 
         print('Doing Feature Importance Metrics')
@@ -77,7 +82,6 @@ class Compare_CSVs:
         # Loop to get the feature names and importance scores from the csv files
         for i, file in enumerate(self.csv_ft_files):
             run = '_'.join(file.split('/')[-1].split('_')[4:6])
-
             f = open(file, newline='')
             file_reader = list(csv.reader(f, dialect='excel'))
             f.close()
@@ -101,16 +105,9 @@ class Compare_CSVs:
 
         self.combined_ft_vals.to_csv(f'{self.compiled_folder}/{self.architecture}_{self.algorithm}_Feature_Importance_All.csv', index=False)
 
-        '''
-        Tally the number of times each feature appears in the feature importance values across runs.
-        Sort the feature importance tally by the number of times each feature appears.
-        Save the Tally DataFrame to a csv file.
-        Plot the feature importance tally.
-        '''
-
         print('Doing Feature Tally')
 
-        # Tally the number of times each feature appears in the feature importance values
+        # Tally the number of times each feature appears across runs
         feature_counts = feature_names.value_counts()
         self.feature_importance_tally = pd.DataFrame({
             'Feature Names': feature_counts.index,
@@ -131,7 +128,7 @@ class Compare_CSVs:
         plt.xticks(rotation=90)
         plt.yticks(range(0, int(self.feature_importance_tally['Tally'].max()) + 1, 100))
         plt.tight_layout()
-        plt.savefig(f'{self.compiled_folder}/{self.architecture}_{self.algorithm}_Feature_Importance_Tally_Histo.pdf')
+        plt.savefig(f'{self.compiled_folder}/{self.architecture}_{self.algorithm}_Feature_Importance_Tally_Bar.pdf')
         plt.show()
 
         print('Feature Importance Metrics & Tally Done')
@@ -139,36 +136,35 @@ class Compare_CSVs:
 
     def Feature_Importance_Calculations(self):
         '''
-        Calculate the mean, standard deviation, min, max, median, mode, and IQR of the feature importance values.
+        Calculate the mean, standard deviation, min, max, median, mode, and IQR of the feature importance scores across runs.
         Save the calculated metrics to a csv file.
         '''
 
         print('Doing Feature Importance Calculations')
     
-        # Calculate the mean, standard deviation, min, max, median, mode, and IQR of the feature importance values
+        # If tally of feature is 1, only state the importance score and other values will be set to N/A
+        # Otherwise, calculate stats for each feature
         for feature in self.feature_importance_tally['Feature Names']:
-            # get importance score for each feature across runs and calculate mean, std dev, min, max, median, mode, iqr
             feature_data = self.combined_ft_vals[self.combined_ft_vals['Feature Names'] == feature]['Importance']
             stats = {
-                'Feature Names': [feature],
-                'Importance Mean': [round(feature_data.mean(), 2)],
-                'Importance Std Dev': [round(feature_data.std(), 2)],
-                'Importance Min': [round(feature_data.min(), 2)],
-                'Importance Max': [round(feature_data.max(), 2)],
-                'Importance Median': [round(feature_data.median(), 2)],
-                'Importance Mode': [round(feature_data.mode().iloc[0], 2) if not feature_data.mode().empty else np.nan],
-                'Importance IQR': [round(feature_data.quantile(0.75) - feature_data.quantile(0.25), 2)]
+                'Feature Names': feature,
+                'Importance Mean': round(feature_data.mean(), 2),
+                'Importance Std Dev': round(feature_data.std(), 2) if len(feature_data) > 1 else 'N/A',
+                'Importance Min': round(feature_data.min(), 2) if len(feature_data) > 1 else 'N/A',
+                'Importance Max': round(feature_data.max(), 2) if len(feature_data) > 1 else 'N/A',
+                'Importance Median': round(feature_data.median(), 2) if len(feature_data) > 1 else 'N/A',
+                'Importance Mode': round(feature_data.mode().iloc[0], 2) if len(feature_data) > 1 and not feature_data.mode().empty else 'N/A',
+                'Importance IQR': round(feature_data.quantile(0.75) - feature_data.quantile(0.25), 2) if len(feature_data) > 1 else 'N/A'
             }
-            self.feature_importance_calculations = pd.concat([self.feature_importance_calculations, pd.DataFrame(stats)], ignore_index=True)
-        
-        self.feature_importance_calculations.dropna(inplace=True)
+            self.feature_importance_calculations = pd.concat([self.feature_importance_calculations, pd.DataFrame([stats])], ignore_index=True)
 
         # add tally to feature_importaance_calculations where feature names matches the feature names in feature_importance_tally
         self.feature_importance_calculations = self.feature_importance_calculations.merge(self.feature_importance_tally, on='Feature Names', how='left')
         self.feature_importance_calculations = self.feature_importance_calculations[['Feature Names', 'Tally', 'Importance Mean', 'Importance Std Dev', 'Importance Min', 'Importance Max', 'Importance Median', 'Importance Mode', 'Importance IQR']]
 
-        self.feature_importance_calculations.to_csv(f'{self.compiled_folder}/{self.architecture}_{self.algorithm}_Feature_Importance_Metrics_With_Tally.csv', index=False)
+        self.feature_importance_calculations.to_csv(f'/root/{self.architecture}/results/{self.algorithm}/pipeline_run/Outputs/Compiled_Results/{self.architecture}_{self.algorithm}_Feature_Importance_Metrics_With_Tally.csv', index=False)
 
+        print(self.feature_importance_calculations)
         print('Feature Importance Metrics Done')
         return self.feature_importance_calculations
          
@@ -217,6 +213,7 @@ class Compare_CSVs:
 
             train_metric_calculations_list.append(pd.DataFrame({'Metric': [name], 'Mean': [mean], 'Standard Deviation': [stdv], 'Min': [min_val], 'Max': [max_val], 'Range': [range_val], 'Median': [median_val], 'Mode': [mode_val], 'IQR': [iqr_val]}))
         
+        # Combine the calculated metrics into a single dataframe
         self.train_metric_calculations = pd.concat(train_metric_calculations_list, ignore_index=True)
         self.train_metric_calculations.to_csv(f'/{self.compiled_folder}/{self.architecture}_{self.algorithm}_Train_Avg_Calculated_Metrics.csv', index=False)
 
@@ -268,6 +265,7 @@ class Compare_CSVs:
 
             test_metric_calculations_list.append(pd.DataFrame({'Metric': [name], 'Mean': [mean], 'Standard Deviation': [stdv], 'Min': [min_val], 'Max': [max_val], 'Range': [range_val], 'Median': [median_val], 'Mode': [mode_val], 'IQR': [iqr_val]}))
 
+        # Combine the calculated metrics into a single dataframe
         self.test_metric_calculations = pd.concat(test_metric_calculations_list, ignore_index=True)
         self.test_metric_calculations.to_csv(f'/{self.compiled_folder}/{self.architecture}_{self.algorithm}_Test_Avg_Calculated_Metrics.csv', index=False)
 
@@ -277,20 +275,14 @@ class Compare_CSVs:
     def Log_Reg_Scores(self):
         """
         Processes CSV files containing logistic regression metrics, calculates statistical summaries for features and saves the results to CSV files.
-        This function performs the following steps:
-        1. Reads CSV files from the specified folder that contain 'Feature_Values' in their filenames.
-        2. Extracts feature names and their corresponding logistic regression values from the CSV files.
-        3. Identifies features that appear more than once across the CSV files.
-        4. For each selected feature that appears more than once, calculates statistical summaries (mean, standard deviation, min, max, median, mode, IQR) 
-        for each logistic regression metric (coefficients, ORs, p-val, effect size).
-        5. Saves the calculated summaries of logistic metrics to a CSV file.
-    
+
+        For features appearing more than once, calculate stats for each logistic regression metric. 
         CSV File Columns: Feature, coefficient, CI Lower Coef, CI Upper Coef, Standard Error, Odds Ratios, CI Lower OR, CI Upper OR, P-Value, Effect Size.
         Statistical Summaries: mean, median, mode, min, max, standard deviation, IQR.
         
-        Output:
-            - feature_logistic_values: CSV file containing the combined feature names and logistic regression values.
-            - LR_feature_val_calculations: CSV file containing the calculated statistical summaries for duplicated features.
+        Output documents:
+            - CSV file containing the calculated statistical summaries and tally for each feature (...LR_Feature_Vals_Metrics_With_Tally.csv)
+            - CSV file containing the combined feature names and logistic regression values across runs (...Feature_Values_Across_Runs.csv)
         """
 
         print('Doing Logistic Regression Calculations')
@@ -356,17 +348,17 @@ class Compare_CSVs:
             stats = {k: stats[k] for k in ['Feature', 'Tally'] + [key for key in stats if key not in ['Feature', 'Tally']]}
         
             # Append stats to the DataFrame
-            self.LR_feature_val_calculations = pd.concat([self.LR_feature_val_calculations, pd.DataFrame(stats)], ignore_index=True)
+            self.Lr_feature_val_calculations = pd.concat([self.Lr_feature_val_calculations, pd.DataFrame(stats)], ignore_index=True)
         
-        self.LR_feature_val_calculations.to_csv(f'{self.compiled_folder}/{self.architecture}_{self.algorithm}_LR_Feature_Vals_Metrics_With_Tally.csv', index=False)
+        self.Lr_feature_val_calculations.to_csv(f'{self.compiled_folder}/{self.architecture}_{self.algorithm}_LR_Feature_Vals_Metrics_With_Tally.csv', index=False)
 
         print('Logistic Regression Calculations Done')
-        return self.LR_feature_val_calculations, self.feature_logistic_values, self.log_ft_all
+        return self.Lr_feature_val_calculations, self.feature_logistic_values, self.log_ft_all
 
 if __name__ == '__main__': 
 
-    algorithm = 'mlp'
-    architecture = 'ctgan'
+    algorithm = 'rf'
+    architecture = 'gc'
 
     file_save = Compare_CSVs(architecture=architecture, algorithm=algorithm)
     file_save.Feature_Importance_Values_Tally()
