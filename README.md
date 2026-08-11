@@ -1,3 +1,5 @@
+[![DOI: 10.5281/zenodo.21886530](https://zenodo.org/badge/851131440.svg)](https://doi.org/10.5281/zenodo.21886530)
+
 This repository contains code for synthetic data modelling related to the SURVAYA population.
 
 This project focuses on synthetic data generation and modelling for the AYA framework. It provides tools and utilities for tuning models (eg. hyperparameter tuning; grid search) and evaluating synthetic data across runs (ie. tally distributions, feature importance scores, odds ratio calculations).
